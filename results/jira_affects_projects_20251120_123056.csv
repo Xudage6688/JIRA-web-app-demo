@@ -1,0 +1,4 @@
+issue_key,summary,status,affects_projects_raw,affects_projects_count
+SP-27480,[myQIMA][Story] Order confirmation - disable the factory selection when the factory is limited to edit,Done,"ACA, aca-cn",2
+SP-28060,[myQIMA] Add appcues preperties,Done,aca-new,1
+SP-28336,[Q4 Task] Support Sonar security issue cleaning,Done,"finance-service-cloud, claim-service-cloud, exchange-service-cloud, claim-cloud, exchange-worker-service-cloud, exchange-console-cloud, sap-service-cloud, customer-service-cloud",8

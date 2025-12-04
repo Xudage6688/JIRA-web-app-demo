@@ -1,0 +1,37 @@
+[
+  {
+    "issue_key": "SP-27480",
+    "summary": "[myQIMA][Story] Order confirmation - disable the factory selection when the factory is limited to edit",
+    "status": "Done",
+    "affects_projects": [
+      "ACA",
+      "aca-cn"
+    ],
+    "affects_projects_raw": "ACA, aca-cn"
+  },
+  {
+    "issue_key": "SP-28060",
+    "summary": "[myQIMA] Add appcues preperties",
+    "status": "Done",
+    "affects_projects": [
+      "aca-new"
+    ],
+    "affects_projects_raw": "aca-new"
+  },
+  {
+    "issue_key": "SP-28336",
+    "summary": "[Q4 Task] Support Sonar security issue cleaning",
+    "status": "Done",
+    "affects_projects": [
+      "finance-service-cloud",
+      "claim-service-cloud",
+      "exchange-service-cloud",
+      "claim-cloud",
+      "exchange-worker-service-cloud",
+      "exchange-console-cloud",
+      "sap-service-cloud",
+      "customer-service-cloud"
+    ],
+    "affects_projects_raw": "finance-service-cloud, claim-service-cloud, exchange-service-cloud, claim-cloud, exchange-worker-service-cloud, exchange-console-cloud, sap-service-cloud, customer-service-cloud"
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "base_url": "https://qima.atlassian.net",
+  "api_token": "your_api_token_here",
+  "email": "daisy.liu@qima.com",
+  "filter_id": "20334",
+  "field_id": "customfield_12605"
+}
