@@ -3,7 +3,7 @@ import streamlit as st
 
 st.set_page_config(page_title="PR URL批量访问工具", layout="wide")
 
-# 自定义CSS样式，设置蓝色按钮和页面间距
+# 自定义CSS样式，设置蓝色按钮
 st.markdown("""
 <style>
     /* 设置按钮为蓝色背景 */
@@ -15,13 +15,6 @@ st.markdown("""
     div[data-testid="stButton"] > button[kind="primary"]:hover {
         background-color: #0052A3 !important;
     }
-    /* 页面内容整体上移1.5cm（约57px） */
-    .main .block-container {
-        padding-top: 1rem !important;
-    }
-    h1 {
-        margin-top: -1.5rem !important;
-    }
     /* 成功打开信息显示样式：无背景色、字体减小1号 */
     .open-result-text {
         font-size: 0.875rem !important;
@@ -29,10 +22,6 @@ st.markdown("""
         margin: 0.5rem 0 !important;
         padding: 0 !important;
         background: none !important;
-    }
-    /* 输入框往上移动0.5cm（约19px） */
-    div[data-testid="stTextArea"] {
-        margin-top: -1.2rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -61,14 +50,13 @@ def count_valid_urls(text):
             count += 1
     return count
 
-# 多行输入框（高度减少1.5cm，约210px）
+# 多行输入框
 url_input = st.text_area(
-    "",
+    "请输入 PR URL（每行一个）",
     value="",
     placeholder="例如：\nhttps://github.com/example/pr1\nhttps://github.com/example/pr2",
     key="pr_url_input",
-    height=210,  # 高度减少1.5cm（约57px）
-    label_visibility="hidden"  # 隐藏标签
+    height=250
 )
 
 # 初始化session state
@@ -92,7 +80,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # 底部按钮（宽度缩短一半）
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("Open URL", key="open_button", use_container_width=True, type="primary"):
+    if st.button("Open URL", key="open_button", width='stretch', type="primary"):
         st.session_state.button_clicked = True  # 标记按钮已点击
         if url_input:
             # 按行分割URL，并进行过滤处理

@@ -4,6 +4,13 @@ DevOps 工具集主入口
 """
 
 import streamlit as st
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from modules.user_config_loader import get_users_list, get_default_user
 
 # 页面配置
 st.set_page_config(
@@ -50,10 +57,44 @@ st.markdown("""
 # 主标题
 st.markdown('<h1 class="main-header">🛠️ DevOps 工具集</h1>', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">提升团队效率的 DevOps 自动化工具平台</p>', unsafe_allow_html=True)
+
+# 用户选择（顶部中心位置）
+col_left, col_center, col_right = st.columns([1, 1, 1])
+with col_center:
+    st.markdown("### 👤 选择使用者")
+    
+    # 初始化session state
+    if 'current_user' not in st.session_state:
+        default_user = get_default_user()
+        st.session_state.current_user = default_user if default_user else None
+    
+    # 获取用户列表
+    users_list = get_users_list()
+    
+    if users_list:
+        # 用户选择下拉框
+        current_user = st.selectbox(
+            "请选择你的身份",
+            options=users_list,
+            index=users_list.index(st.session_state.current_user) if st.session_state.current_user in users_list else 0,
+            key="user_selector"
+        )
+        
+        # 更新session state
+        if current_user != st.session_state.current_user:
+            st.session_state.current_user = current_user
+            st.rerun()
+        
+        # 显示当前用户
+        st.success(f"✅ 当前使用者: **{current_user}**")
+    else:
+        st.error("❌ 未找到用户配置，请检查 config/users_config.json")
+        st.session_state.current_user = None
+
 st.markdown("---")
 
-# 工具展示区
-col1, col2 = st.columns(2, gap="large")
+# 工具展示区 - 第一行
+col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
     with st.container():
@@ -73,28 +114,23 @@ with col1:
         - 🔗 项目依赖关系追踪
         - 👥 团队协作沟通支持
         - 📊 问题统计和报表生成
-        
-        **最新特性 v2.3：**
-        - ✅ 精确项目映射，修复NA误触发bug
-        - ✅ 支持新JQL API，性能更优
-        - ✅ ADF格式内容解析
         """)
         
         st.markdown("")
-        if st.button("🚀 打开 Jira 工具", key="jira_btn", use_container_width=True, type="primary"):
+        if st.button("🚀 打开 Jira 工具", key="jira_btn", width='stretch', type="primary"):
             st.switch_page("pages/1_📊_Jira_Affects_Project.py")
 
 with col2:
     with st.container():
-        st.markdown("### 🐳 ArgoCD 镜像版本查询工具")
+        st.markdown("### 🐳 Services Images Extractor")
         st.markdown("""
-        查询和追踪 ArgoCD 应用部署的容器镜像版本，支持多环境对比和历史追踪。
+        从 GitHub 仓库提取和追踪容器镜像版本，支持多环境对比和历史追踪。
         
         **核心功能：**
         - 🌍 **多环境支持** - 支持 preprod/staging/prod 环境切换
-        - 📋 **批量服务查询** - 一次查询多个服务的镜像版本
+        - 📋 **批量服务提取** - 一次提取多个服务的镜像版本
         - 🔄 **部署历史对比** - 自动对比部署变化，识别差异
-        - ⏰ **Token 智能验证** - 自动检测 Token 有效期
+        - 🔐 **GitHub 集成** - 直接从 GitHub 仓库读取配置
         - 📊 **可视化展示** - 清晰的表格和图表展示
         
         **适用场景：**
@@ -102,16 +138,63 @@ with col2:
         - ✅ 部署验证和确认
         - 🔍 环境差异对比分析
         - 📈 部署历史趋势分析
-        
-        **技术特性 v2.1：**
-        - ✅ JWT Token 自动验证
-        - ✅ 智能服务映射
-        - ✅ 增量对比分析
         """)
         
         st.markdown("")
-        if st.button("🚀 打开 ArgoCD 工具", key="argocd_btn", use_container_width=True, type="primary"):
-            st.switch_page("pages/2_🐳_ArgoCD_Images.py")
+        if st.button("🚀 打开镜像提取工具", key="argocd_btn", use_container_width=True, type="primary"):
+            st.switch_page("pages/2_🐳_Services_Images_Extractor.py")
+
+with col3:
+    with st.container():
+        st.markdown("### 🚀 CircleCI Pipeline 管理")
+        st.markdown("""
+        触发和监控 CircleCI Pipeline 构建，实时查看构建状态和结果。
+        
+        **核心功能：**
+        - 🎯 **Pipeline 触发** - 快速触发指定项目和分支的构建
+        - 📊 **实时监控** - 监控 Pipeline 执行状态，自动刷新
+        - 🔍 **状态查询** - 查看当前 Pipeline 和 Workflow 状态
+        - 📜 **历史记录** - 保存最近触发的 Pipeline 历史
+        - 🔄 **多种方式** - 支持 ID 和 Number 两种监控方式
+        
+        **适用场景：**
+        - 🚀 快速触发构建和部署
+        - 📊 监控构建进度和状态
+        - ✅ 验证构建结果
+        - 📝 追踪构建历史
+        """)
+        
+        st.markdown("")
+        if st.button("🚀 打开 CircleCI 工具", key="circleci_btn", width='stretch', type="primary"):
+            st.switch_page("pages/4_🚀_CircleCI_Pipeline.py")
+
+# 工具展示区 - 第二行
+st.markdown("")
+col4, col5, col6 = st.columns(3, gap="large")
+
+with col4:
+    with st.container():
+        st.markdown("### 📝 Jira Operations Tool ⭐ NEW")
+        st.markdown("""
+        快速创建、查询和更新 Jira Tickets，提升日常工作效率。
+        
+        **核心功能：**
+        - 🆕 **快速创建 Ticket** - 支持自定义字段，一键创建
+        - 🔍 **查询 Ticket 详情** - 查看完整 Issue 信息
+        - 📦 **批量更新 Resolution** - 高效处理多个 Ticket
+        - 🔐 **Token 持久化** - 安全保存，自动加载
+        - 🎯 **动态字段获取** - 自动识别项目配置
+        
+        **适用场景：**
+        - ✅ 快速创建任务和 Bug
+        - 🔍 查询 Issue 状态和详情
+        - 📊 批量更新 Ticket 状态
+        - 🚀 提升日常工作效率
+        """)
+        
+        st.markdown("")
+        if st.button("🚀 打开 Jira Operations", key="jira_ops_btn", use_container_width=True, type="primary"):
+            st.switch_page("pages/5_📝_Jira_Operations.py")
 
 # 功能亮点
 st.markdown("---")
@@ -123,7 +206,7 @@ with col1:
     st.markdown("""
     <div class="metric-card">
         <h2>🛠️</h2>
-        <h3>2+</h3>
+        <h3>5+</h3>
         <p>可用工具</p>
         <small>持续增加中</small>
     </div>
@@ -172,7 +255,8 @@ with tab1:
     #### 步骤 1: 选择工具
     从主页选择你需要的工具：
     - **📊 Jira Affects Project** - 用于处理 Jira 数据和项目影响分析
-    - **🐳 ArgoCD 镜像查询** - 用于查询容器镜像部署信息
+    - **🐳 Services Images Extractor** - 用于提取容器镜像部署信息
+    - **🚀 CircleCI Pipeline** - 用于触发和监控 CI/CD 构建
     
     #### 步骤 2: 配置认证
     根据工具要求配置相应的认证信息：
@@ -182,9 +266,15 @@ with tab1:
     - 邮箱地址：你的 Jira 账户邮箱
     - 过滤器 ID：要分析的 Jira 过滤器
     
-    **ArgoCD 工具：**
-    - Bearer Token：从 ArgoCD Web 界面的 Settings → Tokens 获取
+    **Services Images Extractor：**
+    - GitHub Token：从 GitHub Settings → Developer settings → Personal access tokens 获取
     - 环境选择：选择目标环境（preprod/staging/prod）
+    - 需要 repo 权限访问私有仓库
+    
+    **CircleCI 工具：**
+    - API Token：在 `circleCi/config.py` 中配置 CircleCI API Token
+    - 项目 Slug：格式为 `vcs-type/org-name/repo-name`
+    - 分支名称：要触发的分支名称
     
     #### 步骤 3: 执行操作
     1. 按照页面提示输入必要信息
@@ -292,13 +382,13 @@ with tab3:
     
     A: 
     - Jira 工具：支持 Jira Cloud 和 Server 8.0+
-    - ArgoCD 工具：支持 preprod、staging、prod 环境
+    - Services Images Extractor：支持 preprod、staging、prod 环境
     
     **Q: 可以一次查询多个服务吗？**
     
     A: 可以！所有工具都支持批量操作：
     - Jira：通过过滤器批量获取问题
-    - ArgoCD：支持选择多个服务同时查询
+    - Services Images Extractor：支持选择多个服务同时提取
     
     **Q: 查询结果可以导出吗？**
     
@@ -347,6 +437,48 @@ with tab3:
 st.markdown("---")
 with st.expander("📋 版本更新日志"):
     st.markdown("""
+    ### v3.0.0 (2026-01-22) - Services Images Extractor 重构 🚀
+
+    #### 🎉 重大更新
+    - ✅ **GitHub 集成**：改用 GitHub 仓库直接读取镜像配置
+    - ✅ **数据源切换**：从 ArgoCD API 切换到 qcore-apps-descriptors 仓库
+    - ✅ **工具重命名**：ArgoCD 镜像查询工具 → Services Images Extractor
+    - ✅ **Token 可选**：GitHub Token 可选，无 Token 也能使用（公共仓库模式）
+    - ✅ **多用户配置**：GitHub Token 统一到 users_config.json 管理
+
+    #### 🔧 技术改进
+    - 新增 `GitHubKustomizeClient` 模块
+    - 优化服务名称验证和错误提示
+    - 支持双重请求策略（Raw URL + GitHub API）
+    - 移除对 ArgoCD 内网的依赖
+
+    #### 📝 功能增强
+    - 🔍 自动检测服务是否存在于仓库
+    - ⚠️ 友好的警告提示和错误信息
+    - 📊 更清晰的数据来源说明
+    - 🔐 企业级安全标准
+
+    ---
+
+    ### v2.1.0 (2026-01-12) - ArgoCD Token 持久化 🔄
+
+    #### 🎉 新增功能
+    - ✅ **Token 自动保存**：使用加密 cookies 持久化存储 Token
+    - ✅ **自动加载**：刷新页面后自动恢复已保存的 Token
+    - ✅ **安全加密**：Token 使用 AES 加密存储在浏览器中
+    - ✅ **环境关联**：Token 与选定环境关联，智能匹配
+
+    #### 📝 使用改进
+    - 🚀 输入 Token 后自动保存，无需点击"保存"按钮
+    - 🔄 页面刷新后自动填充，提升使用体验
+    - 🗑️ 手动清空输入框可移除已保存的 Token
+
+    #### 🔧 技术升级
+    - 新增 `streamlit-cookies-manager` 依赖
+    - 优化 Token 存储安全性
+
+    ---
+
     ### v2.0.0 (2025-11-20) - 重大架构升级
     
     #### 🎉 新增功能
@@ -391,11 +523,11 @@ with st.expander("📋 版本更新日志"):
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 2rem 0;">
-    <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">🛠️ DevOps 工具集 v2.0.0</p>
+    <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">🛠️ DevOps 工具集 v3.0.0</p>
     <p style="margin-bottom: 0.5rem;">Powered by <strong>Streamlit</strong> | Built with ❤️ by DevOps Team</p>
     <p style="font-size: 0.9rem;">👩‍💻 维护者: Daisy Liu | 📧 daisy.liu@qima.com</p>
     <p style="font-size: 0.8rem; margin-top: 1rem; color: #999;">
-        © 2025 QIMA. All rights reserved. | 
+        © 2026 QIMA. All rights reserved. | 
         <a href="https://github.com/Daisy-liu822/jiraWeb" target="_blank" style="color: #667eea;">GitHub</a> | 
         <a href="mailto:daisy.liu@qima.com" style="color: #667eea;">Support</a>
     </p>
@@ -405,6 +537,13 @@ st.markdown("""
 # 侧边栏信息
 with st.sidebar:
     st.markdown("---")
+    
+    # 显示当前用户信息
+    if st.session_state.get('current_user'):
+        st.markdown("### 👤 当前使用者")
+        st.info(f"**{st.session_state.current_user}**")
+        st.markdown("---")
+    
     st.markdown("### 📌 快速链接")
     
     st.markdown("""
@@ -417,7 +556,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ℹ️ 系统信息")
     st.info(f"""
-    **平台版本**: v2.0.0
+    **平台版本**: v3.0.0
     **Streamlit**: {st.__version__}
     **Python**: 3.9+
     **部署**: Streamlit Cloud

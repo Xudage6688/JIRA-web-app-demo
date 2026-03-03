@@ -56,15 +56,15 @@ echo ====================================
 echo.
 echo 💡 提示:
 echo   - 应用将在浏览器中自动打开
-echo   - 默认地址: http://localhost:8501
+echo   - 默认地址: http://127.0.0.1:9999
 echo   - 按 Ctrl+C 停止应用
 echo.
 echo 🐳 ArgoCD 工具将直接可用（无网络限制）
 echo.
 
 REM 启动 Streamlit 并直接打开 ArgoCD 页面
-start "" "http://localhost:8501/ArgoCD_Images"
-streamlit run app.py
+start "" "http://127.0.0.1:9999/ArgoCD_Images"
+python -m streamlit run app.py
 
 pause
 

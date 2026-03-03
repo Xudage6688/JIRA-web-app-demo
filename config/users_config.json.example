@@ -1,0 +1,107 @@
+{
+  "users": {
+    "Daisy": {
+      "display_name": "Daisy Liu",
+      "email": "daisy.liu@qima.com",
+      "jira": {
+        "api_token": "YOUR_JIRA_TOKEN_HERE",
+        "base_url": "https://qima.atlassian.net",
+        "filter_id": "20334",
+        "field_id": "customfield_12605"
+      },
+      "circleci": {
+        "api_token": "YOUR_CIRCLECI_TOKEN_HERE",
+        "vcs_type": "github",
+        "organization": "asiainspection",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      },
+      "github": {
+        "token": "YOUR_GITHUB_TOKEN_HERE",
+        "_comment": "GitHub Personal Access Token，需要 repo 权限访问私有仓库"
+      }
+    },
+    "Elle": {
+      "display_name": "Elle",
+      "email": "elle@qima.com",
+      "jira": {
+        "api_token": "YOUR_JIRA_TOKEN_HERE",
+        "base_url": "https://qima.atlassian.net",
+        "filter_id": "20334",
+        "field_id": "customfield_12605"
+      },
+      "circleci": {
+        "api_token": "YOUR_CIRCLECI_TOKEN_HERE",
+        "vcs_type": "github",
+        "organization": "asiainspection",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      },
+      "github": {
+        "token": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    },
+    "Lucas": {
+      "display_name": "Lucas",
+      "email": "lucas@qima.com",
+      "jira": {
+        "api_token": "YOUR_JIRA_TOKEN_HERE",
+        "base_url": "https://qima.atlassian.net",
+        "filter_id": "20334",
+        "field_id": "customfield_12605"
+      },
+      "circleci": {
+        "api_token": "YOUR_CIRCLECI_TOKEN_HERE",
+        "vcs_type": "github",
+        "organization": "asiainspection",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      },
+      "github": {
+        "token": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    },
+    "Nina": {
+      "display_name": "Nina",
+      "email": "nina@qima.com",
+      "jira": {
+        "api_token": "YOUR_JIRA_TOKEN_HERE",
+        "base_url": "https://qima.atlassian.net",
+        "filter_id": "20334",
+        "field_id": "customfield_12605"
+      },
+      "circleci": {
+        "api_token": "YOUR_CIRCLECI_TOKEN_HERE",
+        "vcs_type": "github",
+        "organization": "asiainspection",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      },
+      "github": {
+        "token": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    },
+    "Sam": {
+      "display_name": "Sam",
+      "email": "sam@qima.com",
+      "jira": {
+        "api_token": "YOUR_JIRA_TOKEN_HERE",
+        "base_url": "https://qima.atlassian.net",
+        "filter_id": "20334",
+        "field_id": "customfield_12605"
+      },
+      "circleci": {
+        "api_token": "YOUR_CIRCLECI_TOKEN_HERE",
+        "vcs_type": "github",
+        "organization": "asiainspection",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      },
+      "github": {
+        "token": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    }
+  },
+  "default_user": "Daisy",
+  "_comment": "请将 YOUR_*_TOKEN_HERE 替换为实际的 Token，然后将此文件重命名为 users_config.json"
+}

@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+API 调用用 requests.Session()，加 headers={'Authorization': f'Bearer {token}'%。
+优先 REST v3+，自动降级 (e.g., Jira 410 Gone → v2)。
+YAML/JSON 解析用 PyYAML/json.safe_load。
+GitHub：用 GraphQL API 优先，fallback REST。
+错误处理：捕获 401/404/429，显示用户友好消息。
+批量操作：用 pagination (e.g., Jira maxResults=100)。

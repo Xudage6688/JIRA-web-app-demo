@@ -26,7 +26,7 @@ class ArgoCDClient:
             'app_suffix': '--qcore-preprod'
         },
         'staging': {
-            'server': 'https://argocd.qcore-staging.qima.com',
+            'server': 'https://argocd.qcore-preprod.qima.com',
             'app_prefix': 'staging-',
             'app_suffix': '--qcore-staging'
         },

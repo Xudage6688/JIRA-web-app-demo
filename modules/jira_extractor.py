@@ -8,9 +8,33 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# 为 Streamlit 环境创建安全的日志记录器
+class SafeLogger:
+    """安全的日志记录器，避免 stderr 关闭导致的问题"""
+    
+    def __init__(self, name):
+        self.name = name
+    
+    def _safe_log(self, level, msg):
+        """安全地记录日志，捕获所有异常"""
+        try:
+            print(f"[{level}] {msg}")
+        except:
+            pass  # 静默忽略所有日志错误
+    
+    def info(self, msg):
+        self._safe_log("INFO", msg)
+    
+    def warning(self, msg):
+        self._safe_log("WARNING", msg)
+    
+    def error(self, msg):
+        self._safe_log("ERROR", msg)
+    
+    def debug(self, msg):
+        self._safe_log("DEBUG", msg)
+
+logger = SafeLogger(__name__)
 
 class JiraExtractor:
     def __init__(self, base_url: str, api_token: str, email: str):
@@ -42,7 +66,7 @@ class JiraExtractor:
     def _load_project_mappings(self) -> Dict[str, List[str]]:
         """加载项目映射配置"""
         try:
-            mapping_file = "project_mapping.json"
+            mapping_file = "config/project_mapping.json"
             if os.path.exists(mapping_file):
                 with open(mapping_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
@@ -108,7 +132,7 @@ class JiraExtractor:
         url = f"{self.base_url}/rest/api/3/search/jql"
         
         # 构建查询参数
-        fields = ["summary", "key", "status"]
+        fields = ["summary", "key", "status", "customfield_12628"]
         if custom_field_id:
             fields.append(custom_field_id)
         
@@ -170,7 +194,7 @@ class JiraExtractor:
                 url = f"{self.base_url}/rest/api/{api_version}/search"
                 
                 # 构建查询参数
-                fields = ["summary", "key", "status"]
+                fields = ["summary", "key", "status", "customfield_12628"]
                 if custom_field_id:
                     fields.append(custom_field_id)
                 
@@ -222,7 +246,7 @@ class JiraExtractor:
         url = f"{self.base_url}/rest/api/3/search"
         
         # 构建查询参数
-        fields = ["summary", "key", "status"]
+        fields = ["summary", "key", "status", "customfield_12628"]
         if custom_field_id:
             fields.append(custom_field_id)
         
@@ -248,7 +272,6 @@ class JiraExtractor:
                     'AND status = Done '
                     'AND resolution = "Waiting to Release" '
                     'AND updated >= -100d '
-                    'AND "sp team[dropdown]" != Titan '
                     'ORDER BY Key ASC'
                 )
                 logger.info(f"备用 JQL: {fallback_jql}")
@@ -373,19 +396,28 @@ class JiraExtractor:
             potential_fields = []
 
             for issue in issues:
-                issue_key = issue.get('key', '')
-                issue_url = f"{self.base_url}/rest/api/3/issue/{issue_key}?expand=names"
-                issue_data = self.session.get(issue_url).json()
-                fields = issue_data.get('fields', {})
-                names = issue_data.get('names', {})
+                try:
+                    issue_key = issue.get('key', '')
+                    issue_url = f"{self.base_url}/rest/api/3/issue/{issue_key}?expand=names"
+                    
+                    # 正确处理响应对象
+                    issue_response = self.session.get(issue_url)
+                    issue_response.raise_for_status()
+                    issue_data = issue_response.json()
+                    
+                    fields = issue_data.get('fields', {})
+                    names = issue_data.get('names', {})
 
-                for field_id, value in fields.items():
-                    if field_id.startswith('customfield_') and value:
-                        field_name = names.get(field_id, 'N/A')
-                        if any(kw in field_name.lower() or (isinstance(value, str) and kw in value.lower())
-                               for kw in ['service', 'cloud', 'legacy', 'web', 'api', 'project']):
-                            logger.info(f"找到匹配字段: {field_id} ({field_name})")
-                            return field_id
+                    for field_id, value in fields.items():
+                        if field_id.startswith('customfield_') and value:
+                            field_name = names.get(field_id, 'N/A')
+                            if any(kw in field_name.lower() or (isinstance(value, str) and kw in value.lower())
+                                   for kw in ['service', 'cloud', 'legacy', 'web', 'api', 'project']):
+                                logger.info(f"找到匹配字段: {field_id} ({field_name})")
+                                return field_id
+                except Exception as issue_error:
+                    logger.warning(f"处理问题 {issue_key} 时出错: {issue_error}")
+                    continue
 
         except Exception as e:
             logger.error(f"字段识别失败: {e}")
@@ -415,7 +447,6 @@ class JiraExtractor:
                 'AND status = Done '
                 'AND resolution = "Waiting to Release" '
                 'AND updated >= -100d '
-                'AND "sp team[dropdown]" != Titan '
                 'ORDER BY Key ASC'
             )
             issues = self.search_issues_by_jql(fallback_jql, custom_field_id, max_results=1000)
@@ -432,6 +463,13 @@ class JiraExtractor:
             issue_key = issue.get('key', '')
             summary = fields.get('summary', '')
             status = fields.get('status', {}).get('name', '')
+            sp_team_raw = fields.get('customfield_12628', None)
+            if isinstance(sp_team_raw, dict):
+                sp_team = sp_team_raw.get('value', '')
+            elif sp_team_raw is not None:
+                sp_team = str(sp_team_raw)
+            else:
+                sp_team = ''
             
             # 如果没有字段ID，跳过 Affects Project 提取
             if custom_field_id is None:
@@ -495,6 +533,7 @@ class JiraExtractor:
                 'issue_key': issue_key,
                 'summary': summary,
                 'status': status,
+                'sp_team': sp_team,
                 'affects_projects': projects,
                 'affects_projects_raw': affects_project_str
             })

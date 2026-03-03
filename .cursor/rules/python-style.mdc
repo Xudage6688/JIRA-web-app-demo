@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+始终使用 Python 3.12+。
+遵循 PEP8：2空格缩进，camelCase 函数/变量，PascalCase 类。
+每个函数/方法写 docstring。
+优先用 type hints (e.g., def func(param: str) -> dict)。
+Streamlit 组件：用 st.columns/st.container 布局，避免全局变量，用 session_state 管理状态。
+错误处理：用 try-except，log 而非 print。
+禁止 hardcode Token/URL，用 config_loader 加载。

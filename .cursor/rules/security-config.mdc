@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+所有 API Token 用 st.text_input(type="password") 输入，永不显示明文。
+Token 存储：用 encrypted cookies 或本地 JSON，但不提交到 Git（加 .gitignore）。
+配置管理：统一用 config/ 目录，users_config.json 作为唯一来源，只读不写。
+验证 Token：每个 API 调用前检查有效性（e.g., JWT 过期）。
+多用户：用 session_state['user'] 隔离配置，防止交叉污染。
+符合 OWASP：输入校验用 pydantic/zod-like，防注入。

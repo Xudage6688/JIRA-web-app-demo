@@ -1,461 +1,223 @@
 # 🛠️ DevOps 工具集
 
-一个基于 Streamlit 的 DevOps 自动化工具平台，集成了 Jira 分析和 ArgoCD 镜像查询功能，帮助团队提升工作效率。
+一个基于 Streamlit 的 DevOps 自动化工具平台，集成 Jira 分析、Jira 工单管理、镜像查询和 CircleCI Pipeline 管理功能。
 
 ## 🎯 工具列表
 
-### 📊 Jira Affects Project 分析工具
-快速识别和导出 Jira 问题影响的项目列表，支持项目映射和智能去重。
+| 工具 | 功能说明 |
+|------|---------|
+| 📊 Jira Affects Project | Jira 问题影响项目分析，支持项目映射和智能去重 |
+| 🐳 Services Images Extractor | 从 GitHub 提取容器镜像版本，支持多环境对比 |
+| 🌐 Open PR Url | PR 链接快速打开工具 |
+| 🚀 CircleCI Pipeline 管理 | Pipeline 触发、查询、监控和审批管理 |
+| 📝 Jira Operations Tool | Jira 工单管理工具，支持创建、查询、批量更新 Resolution |
 
-### 🐳 ArgoCD 镜像查询工具 ⭐ NEW
-查询和追踪 ArgoCD 应用部署的容器镜像版本，支持多环境对比和历史分析。
+---
+
+## 🚀 快速开始
+
+### 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+### 启动应用
+```bash
+streamlit run app.py
+```
+
+### 访问地址
+```
+http://localhost:8501
+```
+
+---
+
+## ⚙️ 配置说明
+
+### 1. 用户配置文件
+复制示例文件并编辑：
+```bash
+cp config/users_config.json.example config/users_config.json
+```
+
+配置格式：
+```json
+{
+  "users": {
+    "username": {
+      "display_name": "显示名称",
+      "jira": {
+        "api_token": "your-jira-token",
+        "email": "user@example.com"
+      },
+      "circleci": {
+        "api_token": "your-circleci-token",
+        "organization": "asiainspection",
+        "vcs_type": "github",
+        "default_project": "back-office-cloud",
+        "default_branch": "master"
+      }
+    }
+  }
+}
+```
+
+### 2. 服务列表配置
+编辑 `config/circleci-services.txt`，每行一个服务名称。
+
+---
+
+## 🔑 获取 API Tokens
+
+### Jira API Token
+1. 访问 https://id.atlassian.com/manage-profile/security/api-tokens
+2. 点击 "Create API token"
+3. 复制生成的 Token
+
+### CircleCI API Token
+1. 登录 CircleCI → User Settings → Personal API Tokens
+2. 创建新 Token
+3. 复制保存
+
+### GitHub Personal Access Token
+1. GitHub → Settings → Developer settings → Personal access tokens
+2. Generate new token (classic)
+3. 勾选 `repo` 权限
+4. 复制生成的 Token（格式：`ghp_xxx...`）
 
 ---
 
 ## ✨ 主要功能
 
-### 📊 Jira 工具功能
-- **智能字段检测**: 自动识别 Jira 中的 "Affects Project" 字段
-- **批量数据提取**: 从指定过滤器中批量提取问题数据
-- **项目去重**: 自动去除重复项目，生成唯一项目列表
-- **多格式导出**: 支持 JSON 和 CSV 格式下载
+### 📊 Jira 工具
+- 智能字段检测和批量数据提取
+- 项目映射（如 `aca` → `aca-cn`）
+- 多格式导出（JSON/CSV）
 
-### 🆕 新增功能
-- **项目映射**: 自动添加关联项目（如 `aca` 自动添加 `aca-cn`）
-- **映射管理**: 可视化界面管理项目映射规则
-- **配置持久化**: 本地文件存储配置，刷新页面后保持不变
-- **智能匹配**: 支持大小写变体和精确匹配项目名称
-- **精确映射**: 使用精确匹配避免短项目名（如NA）误触发映射
+### 🐳 镜像查询工具
+- GitHub 仓库集成（无需 ArgoCD 内网）
+- 多环境支持（preprod/staging/prod）
+- 部署对比分析（高亮变化）
+- 服务下拉选择（支持输入过滤）
 
-### 🔒 最高安全级别
-- **API Token 完全隐藏**: 始终以密码形式输入，永不显示明文
-- **零风险保护**: 在任何界面和状态下都完全隐藏敏感信息
-- **企业级安全**: 符合最高安全标准的保护措施
-- **绝对隐私**: 防止任何形式的Token泄露
+### 🚀 CircleCI Pipeline 管理
 
-### 💾 配置管理
-- **本地存储**: 配置自动保存到本地 JSON 文件
-- **持久化**: 即使关闭浏览器，配置也不会丢失
-- **一键重置**: 支持快速恢复默认配置
+#### 触发 Pipeline
+- 下拉选择项目（74个服务，支持输入过滤）
+- 输入分支名称
+- 一键触发
 
-### 🐳 ArgoCD 工具功能
+#### 查询 Pipeline 列表
+- 并发查询（5-10秒完成）
+- 显示 Preprod Approval 信息
+- 审批人自动识别（UUID → 用户名）
+- 北京时间 + 相对时间显示
 
-**⚠️ 网络访问说明：**
-- ArgoCD 服务器位于公司内网
-- 在线版本因网络限制无法访问 ArgoCD
-- **推荐本地运行**使用 ArgoCD 功能
+#### 实时监控
+- Pipeline/Workflow/Jobs 详细状态
+- Jobs 统计面板（成功/失败/运行中/待审批）
+- 运行时长显示
+- Git 提交信息
 
-**功能特性：**
-- **多环境支持**: 支持 preprod、staging、prod 环境切换
-- **批量服务查询**: 一次查询多个服务的镜像版本
-- **Token 智能验证**: 自动检测 JWT Token 有效性和过期时间
-- **部署对比分析**: 自动对比上次查询结果，高亮显示变化 ⭐ NEW
-- **智能高亮**: 新增🟢 / 更新🟡 / 移除🔴 服务一目了然
-- **CLI Token 自动加载**: 支持从 ArgoCD CLI 配置自动读取 Token
-- **数据可视化**: 清晰的表格展示查询结果
-- **多格式导出**: 支持 JSON 和 CSV 格式下载
+#### 审批管理
+- 查找待审批的 Jobs
+- 一键审批
+- Preprod Jobs 自动展开
+- 审批时长显示
 
-## 🚀 快速开始
+### 📝 Jira Operations Tool
 
-### 在线使用（推荐）⭐
+#### 创建 Ticket
+- 快速创建 Issue，支持自定义字段
+- Work Type 选择（Task/Bug/Story/Epic 等）
+- Priority、SP Team 等字段设置
+- 自动转换 ADF 格式描述
 
-**直接访问线上应用：** 👉 **https://webtools.streamlit.app/**
+#### 查询 Ticket
+- 输入 Ticket Key 快速查询
+- 显示完整 Issue 信息
+- 包含 Summary、Description、Status、Resolution 等
+- 支持查看完整 JSON 数据
 
-无需安装，直接使用！
+#### 批量更新 Resolution
+- 支持批量更新多个 Ticket
+- 进度条实时显示
+- 详细结果统计（成功/失败）
+- 自动识别错误原因
 
-### 本地运行
+---
 
-1. **克隆项目**
-```bash
-git clone https://github.com/Daisy-liu822/webtools.git
-cd webtools
-```
-
-2. **安装依赖**
-```bash
-pip install -r requirements.txt
-```
-
-3. **运行应用**
-```bash
-streamlit run app.py
-```
-
-4. **访问应用**
-打开浏览器访问 `http://localhost:8501`
-
-5. **选择工具**
-   - 主页提供清晰的功能导航
-   - 可通过侧边栏快速切换页面
-
-### 在线访问
-
-**🌐 已部署应用：** https://webtools.streamlit.app/
-
-**功能访问：**
-- ✅ **Jira 工具**：完全可用，直接从主页点击进入
-- ⚠️ **ArgoCD 工具**：因网络限制，推荐本地运行使用
-
-**网络限制说明：**
-- ArgoCD 服务器位于公司内网，仅允许内网访问
-- Streamlit Cloud 从外网访问会被防火墙阻止
-- **解决方案**：本地运行 `streamlit run app.py`
-
-**部署信息：**
-- 平台：Streamlit Community Cloud
-- 自动更新：代码推送后自动部署
-- 全球访问：支持全球用户访问
-
-## 📖 使用指南
-
-### 🔧 Jira 工具使用
-
-#### 配置设置
-
-1. **获取 API Token**
-   - 访问 [Atlassian 账户设置](https://id.atlassian.com/manage-profile/security/api-tokens)
-   - 创建新的 API Token
-
-2. **填写配置信息**
-   - **Jira 实例 URL**: 你的 Jira 服务器地址
-   - **API Token**: 从 Atlassian 获取的 Token（完全隐藏）
-   - **Jira 邮箱**: 你的 Jira 账户邮箱
-   - **过滤器 ID**: 要分析的 Jira 过滤器 ID
-
-3. **自动检测字段 ID**
-   - 点击 "🔍 自动检测字段 ID" 按钮
-   - 系统会自动识别 "Affects Project" 字段
-
-### 🐳 ArgoCD 工具使用
-
-#### 获取 ArgoCD Token
-1. 登录 ArgoCD Web 界面
-2. 点击右上角用户头像 → Settings
-3. 选择 Tokens 标签
-4. 点击 Generate New 创建新 token
-5. 复制生成的 token（不包含 Bearer 前缀）
-
-#### 使用步骤
-1. 从主页选择 "ArgoCD 镜像查询"
-2. 选择目标环境（preprod/staging/prod）
-3. 配置 Token（支持三种方式）:
-   - **推荐**: 在 ArgoCD UI Settings → Tokens 创建专用 Token
-   - **自动**: 从 ArgoCD CLI 配置自动加载（如果已配置）
-   - **手动**: 从浏览器开发者工具提取 session token
-4. 选择要查询的服务列表
-5. 点击 "开始查询" 并查看结果
-6. **查看对比分析**: 高亮显示与上次查询的差异
-7. 导出数据为 JSON 或 CSV 格式
-
-#### 部署对比功能 ⭐ NEW
-
-**使用方法：**
-1. 第一次查询后，结果会自动保存
-2. 第二次查询时，自动与上次结果对比
-3. 查看颜色高亮和统计变化
-
-**对比展示：**
-- 🟢 **绿色高亮** - 新增的服务
-- 🟡 **黄色高亮** - 版本已更新的服务（显示前后版本对比）
-- 🔴 **红色高亮** - 已移除的服务
-- 📊 **统计面板** - 显示新增/更新/不变/移除数量
-- 💡 **智能提示** - 首次查询后提示，再次查询自动对比
-
-**应用场景：**
-- 验证部署是否成功
-- 追踪版本更新
-- 发现意外变化
-- 审计部署记录
-
-### 🔐 API Token 安全特性
-
-#### 最高安全级别
-- **完全隐藏**: Token 始终以 `••••••••` 形式显示
-- **零泄露风险**: 在任何情况下都不会显示明文内容
-- **企业级保护**: 符合最高安全标准的保护措施
-
-#### 安全设计理念
-- **绝对隐私**: 防止屏幕泄露、截图泄露等所有风险
-- **无显示切换**: 移除所有可能暴露Token的选项
-- **全方位保护**: 配置状态、文件预览等所有界面都安全
-
-#### 安全优势
-- **公共场合**: 完全安全，无需担心他人偷看
-- **共享屏幕**: 绝对安全，Token永远不会被显示
-- **团队协作**: 保护敏感信息，符合企业安全要求
-
-### 🚀 数据提取
-
-1. **开始提取**
-   - 配置完成后，点击 "🚀 开始提取数据" 按钮
-   - 系统会从 Jira 获取数据并应用项目映射规则
-
-2. **查看结果**
-   - 数据预览表格
-   - 去重后的项目列表
-   - 项目映射应用状态
-
-3. **下载数据**
-   - JSON 格式：完整数据结构
-   - CSV 格式：表格化数据，便于分析
-
-### ⚙️ 项目映射管理
-
-#### 🔗 映射规则
-项目映射功能允许你定义规则，当检测到特定项目时自动添加关联项目：
-
-- `aca` / `ACA` / `aca-new` → 自动添加 `aca-cn`
-- `public-api` / `Public-API` → 自动添加 `public-api-job`
-- `cia` / `CIA-NEW` → 自动添加 `cia-cn`
-- `final-report-service` → 自动添加 `final-report-service-replica`
-
-**精确匹配机制**：使用精确匹配（大小写不敏感）避免短项目名误触发。例如：
-- ✅ `ACA` 精确匹配，会添加 `aca-cn`
-- ✅ `aca-new` 精确匹配，会添加 `aca-cn`
-- ❌ `NA` 不会误触发 `final-report-service-replica`（已修复的bug）
-
-#### 📝 管理操作
-- **添加规则**: 定义新的项目映射关系
-- **编辑规则**: 修改现有的映射规则
-- **删除规则**: 移除不需要的映射
-- **重置规则**: 恢复默认配置
-
-#### 💡 使用示例
-假设 Jira 中检测到项目 `aca`，系统会：
-1. 保留原始项目 `aca`
-2. 自动添加关联项目 `aca-cn`
-3. 最终结果：`aca, aca-cn`
-
-## 🏗️ 项目结构
+## 📁 项目结构
 
 ```
 jira-web-app/
-├── app.py                      # 主入口（Landing Page）
-├── pages/                      # Streamlit 多页面
-│   ├── 1_Jira_Affects_Project.py
-│   └── 2_🐳_ArgoCD_Images.py
-├── modules/                    # 功能模块
-│   ├── jira_extractor.py       # Jira API 交互
-│   └── argocd_client.py        # ArgoCD API 交互
-├── config/                     # 配置文件
-│   ├── jira_config.json
-│   ├── argocd_config.json
-│   └── project_mapping.json
-├── argoCDFromAPI/              # 原始 ArgoCD 脚本
-├── requirements.txt            # Python 依赖
-├── .streamlit/                 # Streamlit 配置
-│   └── config.toml
-└── README.md                   # 项目文档
+├── app.py                          # 主应用
+├── requirements.txt                # 依赖
+├── README.md                       # 文档
+├── config/                         # 配置
+│   ├── users_config.json           # 用户配置
+│   ├── circleci-services.txt       # 服务列表
+│   └── README-circleci.md          # 说明
+├── pages/                          # 页面
+│   ├── 1_📊_Jira_Affects_Project.py
+│   ├── 2_🐳_Services_Images_Extractor.py
+│   ├── 3_🌐_Open_PR_Url.py
+│   ├── 4_🚀_CircleCI_Pipeline.py
+│   └── 5_📝_Jira_Operations.py
+├── modules/                        # 模块
+│   ├── jira_extractor.py
+│   ├── jira_operations_helper.py
+│   ├── github_kustomize_client.py
+│   ├── argocd_client.py
+│   └── user_config_loader.py
+└── circleCi/                       # CircleCI
+    ├── triggerJob.py
+    ├── monitoring.py
+    └── config_loader.py
 ```
 
-## 🔧 技术架构
+---
 
-### 核心组件
-- **Streamlit**: Web 应用框架（多页面架构）
-- **Jira REST API v3**: Jira 数据获取（支持增强 JQL API）
-- **ArgoCD REST API**: 容器镜像信息查询
-- **Pandas**: 数据处理和分析
-- **PyYAML**: YAML 配置解析
-- **Requests**: HTTP 请求处理
+## 🎮 使用技巧
 
-### 应用架构
-- **多页面设计**: 使用 Streamlit Pages 实现模块化
-- **模块化代码**: 功能模块独立，易于维护
-- **配置分离**: 各工具独立配置管理
-- **会话状态**: 使用 session_state 管理应用状态
+### CircleCI Pipeline 管理
 
-### 配置管理
-- **本地文件存储**: `jira_config.json` 存储用户配置
-- **项目映射**: `project_mapping.json` 存储映射规则
-- **会话状态**: Streamlit session state 管理应用状态
+1. **快速触发**
+   - 在下拉框中输入关键字快速过滤项目
+   - 触发后 ID 自动传递到监控和审批页面
 
-### 最高安全机制
-- **密码输入**: API Token 使用 `type="password"` 输入框
-- **完全隐藏**: 移除所有显示/隐藏切换功能
-- **状态保护**: 配置状态和文件内容预览时显示 `🔒 已配置（安全隐藏）`
-- **零风险设计**: 防止任何形式的Token泄露
+2. **高效查询**
+   - 并发查询提升速度（20秒 → 5秒）
+   - 用户信息自动缓存，避免重复 API 调用
+   - 可在侧边栏查看缓存统计并清空
 
-### API兼容性机制
-- **增强JQL API**: 优先使用最新的增强搜索API
-- **传统API备用**: 自动降级到传统API确保兼容性
-- **多版本支持**: 支持Jira API v2和v3
-- **容错处理**: 410 Gone状态自动切换到备用API
-- **字段ID检测**: 智能检测字段ID，失败时使用已知备用ID
+3. **状态保持**
+   - 切换 Tab 不丢失输入
+   - 刷新页面重置为默认值
 
-### 数据处理流程
-1. **配置验证** → 检查 API Token 和字段 ID
-2. **API选择** → 优先使用增强JQL API，失败时自动降级到传统API
-3. **数据获取** → 从 Jira 批量获取问题数据，支持ADF格式解析
-4. **精确映射** → 使用精确匹配应用映射规则，添加关联项目
-5. **数据去重** → 去除重复项目，生成唯一列表
-6. **结果导出** → 生成 JSON 和 CSV 文件
-
-## 📦 依赖要求
-
-```txt
-streamlit>=1.32.0      # Web 应用框架
-requests>=2.31.0       # HTTP 请求库
-pandas>=2.2.0          # 数据处理库
-pyyaml>=6.0           # YAML 解析库
-urllib3>=2.0.0        # URL 处理库
-```
-
-## 🌐 在线部署
-
-### Streamlit Community Cloud
-- **免费计划**: 无限制使用
-- **自动部署**: 连接 GitHub 仓库自动部署
-- **全球访问**: 支持全球用户访问
-- **实时更新**: 代码推送后自动更新
-
-### 部署配置
-应用已配置为 Streamlit Cloud 优化：
-- 服务器端口和地址设置
-- 字体和错误详情配置
-- 文件上传大小限制
-
-## 🔒 安全说明
-
-### 最高安全级别保护
-- **完全隐藏**: API Token 以密码形式输入，永不显示明文
-- **零泄露风险**: 在任何界面和状态下都完全隐藏敏感信息
-- **企业级标准**: 符合最高安全标准的保护措施
-- **绝对隐私**: 防止屏幕泄露、截图泄露等所有风险
-
-### 数据隐私
-- **本地存储**: 配置仅保存在本地，不会上传到云端
-- **敏感信息保护**: 配置状态和文件预览时显示 `🔒 已配置（安全隐藏）`
-- **访问控制**: 需要有效的 Jira 账户和权限
-
-### 安全设计理念
-- **无显示切换**: 移除所有可能暴露Token的选项
-- **全方位保护**: 所有界面都采用最高安全标准
-- **零风险设计**: 防止任何形式的敏感信息泄露
-- **企业级安全**: 适合团队协作和公共环境使用
-
-## ❓ 常见问题
-
-### Q: 为什么需要 API Token？
-A: API Token 是访问 Jira 数据的身份验证凭证，确保数据安全。
-
-### Q: 如何找到过滤器 ID？
-A: 在 Jira 中创建或查看过滤器，URL 中的数字就是过滤器 ID。
-
-### Q: 项目映射规则如何生效？
-A: 映射规则在数据提取时自动应用，使用精确匹配机制，修改后需要重新提取数据。
-
-### Q: 为什么NA不会触发映射？
-A: 系统使用精确匹配避免短项目名误触发。NA不会匹配final-report-service等长项目名。
-
-### Q: 配置丢失怎么办？
-A: 配置会自动保存到本地文件，即使刷新页面也不会丢失。
-
-### Q: 支持哪些 Jira 版本？
-A: 支持 Jira Cloud 和 Jira Server 8.0+ 版本，具有增强的API兼容性。
-
-### Q: 新JQL API有什么优势？
-A: 新API提供更好的性能、更丰富的功能和更强的稳定性，同时保持向后兼容。
-
-### Q: 如果API检测失败怎么办？
-A: 系统会自动降级到传统API，并最终使用已知的备用字段ID，确保始终能正常工作。
-
-### Q: API Token 安全吗？
-A: 绝对安全！Token 完全隐藏，永不显示明文，符合最高安全标准。
-
-### Q: 为什么看不到我的 API Token？
-A: 这是安全设计！Token 始终隐藏以保护您的账户安全，这是最高级别的安全保护。
-
-### Q: 如何在公共场合安全使用？
-A: 完全安全！Token 永远不会被显示，即使在共享屏幕时也绝对安全。
-
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 🙏 致谢
-
-感谢 Streamlit 团队提供的优秀框架，以及 Atlassian 的 Jira API 支持。
-
-## 📞 支持
-
-- 📧 Email: daisy.liu@qima.com
-- 💬 内部协作平台
-- 🐛 [GitHub Issues](https://github.com/Daisy-liu822/webtools/issues)
-- 🌐 在线访问: https://webtools.streamlit.app
+4. **Pipeline ID 传递**
+   - 触发成功 → 自动填充到监控/审批
+   - 列表点"监控" → 自动填充到监控/审批
 
 ---
 
-**最后更新**: 2025-11-20  
-**版本**: 2.0.0  
-**维护者**: Daisy Liu  
-**仓库**: https://github.com/Daisy-liu822/webtools
+## 🔧 故障排除
+
+| 问题 | 解决方案 |
+|------|---------|
+| API Token 无效 | 检查 `config/users_config.json` 配置 |
+| 服务列表为空 | 确保 `config/circleci-services.txt` 存在 |
+| 并发查询报错 | 检查网络连接和 API 速率限制 |
+| 审批人显示异常 | 应用会自动查询转换，失败时显示"已审批" |
 
 ---
 
-## 📋 更新日志
+## 📞 技术支持
 
-### v2.0.0 (2025-11-20) - 重大架构升级 🎉
+- CircleCI API: https://circleci.com/docs/api/v2/
+- Streamlit 文档: https://docs.streamlit.io/
 
-#### 🎉 新增功能
-- ✅ **ArgoCD 镜像查询工具**: 查询容器镜像版本，支持多环境
-- ✅ **部署对比分析**: 自动对比上次结果，智能高亮显示变化（🟢🟡🔴）
-- ✅ **多页面架构**: 采用 Streamlit Pages 实现模块化设计
-- ✅ **统一入口**: Landing Page 提供清晰的功能导航
-- ✅ **JWT Token 验证**: 自动检测 Token 有效性和过期时间
-- ✅ **CLI Token 集成**: 支持从 ArgoCD CLI 配置自动加载 Token
-
-#### 🔧 架构优化
-- ✅ 模块化代码重构，提升可维护性
-- ✅ 配置文件独立管理（config/ 目录）
-- ✅ 统一的错误处理机制
-- ✅ 优化的用户界面设计
-- ✅ 智能结果对比和可视化
-
-#### 📚 文档完善
-- ✅ 完整的使用说明
-- ✅ 简化的文档结构
-- ✅ 发布清单和测试指南
-
----
-
-### v1.x (历史版本)
-- 🐛 **重要修复**: 修复NA项目错误触发final-report-service-replica的映射bug
-- 🎯 **精确匹配**: 改进映射逻辑，使用精确匹配避免子字符串误触发
-- 🔄 **映射优化**: 支持大小写变体（ACA/aca, Public-API/public-api, CIA-NEW等）
-- ✅ **稳定性提升**: 确保短项目名不会误触发长项目名的映射规则
-- 🔧 **技术改进**: 将子字符串匹配(`in`操作符)改为精确匹配(`==`操作符)
-- 🧪 **测试验证**: 通过完整测试确保映射逻辑的正确性
-
-### v2.2.1 (2025-10-23) - API兼容性增强
-- 🔧 **字段ID检测修复**: 增强API兼容性，添加备用机制
-- 🛡️ **容错机制**: 确保始终返回有效字段ID，避免检测失败
-- 🔄 **API降级**: 支持多种API版本的自动降级和备用方案
-- ✅ **稳定性提升**: 解决字段ID自动检测的可靠性问题
-
-### v2.2.0 (2025-10-23) - JQL API升级
-- 🚀 **新JQL API**: 整合增强搜索API，提升搜索性能和功能
-- 🔄 **传统API备用**: 保持向后兼容，支持API版本降级
-- 📄 **ADF解析**: 支持Atlassian Document Format内容解析
-- 🎯 **精确项目映射**: 改进项目映射逻辑，支持复杂数据结构
-- 🔧 **向后兼容**: 保持与旧版本API的完全兼容性
-
-### v2.2.0 (2024-08-20)
-- 🔒 **最高安全级别**: API Token完全隐藏，移除显示切换，零风险保护
-- 💾 **配置持久化**: 实现基于文件的配置存储，支持页面刷新保持
-- 🔗 **项目映射**: 新增项目映射管理功能，支持关联项目自动添加
-- 📊 **数据去重**: 项目列表自动去重，一行一个便于复制
-
-### v2.1.0 (2024-08-19)
-- 🎨 **UI/UX改进**: 侧边栏配置，标签页布局，步骤指引
-- 🔐 **安全增强**: API Token密码输入，显示/隐藏切换
-- 📝 **使用指南**: 详细的操作说明和最佳实践
+**版本**: 2.0  
+**最后更新**: 2026-01-27  
+**维护者**: Daisy Liu
