@@ -16,7 +16,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.github_kustomize_client import GitHubKustomizeClient
 from modules.user_config_loader import UserConfigLoader
-from streamlit_cookies_manager import EncryptedCookieManager
 
 # 页面配置
 st.set_page_config(
@@ -26,23 +25,13 @@ st.set_page_config(
 )
 
 # 配置文件路径
-SERVICES_CONFIG_FILE = "config/argocd_config.json"  # 服务列表配置
-CIRCLECI_SERVICES_FILE = "config/circleci-services.txt"  # CircleCI 服务列表
+SERVICES_CONFIG_FILE = "config/argocd_config.json"
+CIRCLECI_SERVICES_FILE = "config/circleci-services.txt"
 
-# 默认配置
 DEFAULT_CONFIG = {
     'environment': 'preprod',
     'services': []
 }
-
-# 初始化 Cookie Manager（不能使用缓存，因为包含组件）
-cookies = EncryptedCookieManager(
-    prefix="github_kustomize",
-    password=os.environ.get('COOKIE_PASSWORD', 'default_secret_password')
-)
-
-if not cookies.ready():
-    st.stop()
 
 
 # 加载配置
@@ -168,34 +157,25 @@ def validate_token_and_save(environment, token):
         return False, error_msg
 
 
-# 初始化 session state
+# 初始化 session state（统一入口）
 if 'argocd_config' not in st.session_state:
     st.session_state.argocd_config = load_config()
-
 if 'user_config_loader' not in st.session_state:
     st.session_state.user_config_loader = UserConfigLoader()
-
 if 'current_user' not in st.session_state:
     st.session_state.current_user = st.session_state.user_config_loader.get_default_user()
-
 if 'query_results' not in st.session_state:
     st.session_state.query_results = None
-
 if 'previous_results' not in st.session_state:
     st.session_state.previous_results = None
-
 if 'last_query_time' not in st.session_state:
     st.session_state.last_query_time = None
-
 if 'comparison_data' not in st.session_state:
     st.session_state.comparison_data = None
-
 if 'token_validation_result' not in st.session_state:
     st.session_state.token_validation_result = None
-
 if 'token_last_checked' not in st.session_state:
     st.session_state.token_last_checked = None
-
 if 'user_entered_token' not in st.session_state:
     st.session_state.user_entered_token = False
 
@@ -237,11 +217,19 @@ with st.sidebar:
     
     # 环境选择
     st.subheader("🌍 环境配置")
+    def on_env_change():
+        st.session_state.argocd_config['environment'] = st.session_state.environment_select
+        # 切换环境后清空查询结果，避免旧环境数据残留
+        st.session_state.query_results = None
+        st.session_state.previous_results = None
+        st.session_state.comparison_data = None
+
     environment = st.selectbox(
         "选择环境",
         GitHubKustomizeClient.list_environments(),
         index=GitHubKustomizeClient.list_environments().index(st.session_state.argocd_config.get('environment', 'preprod')),
-        key="environment_select"
+        key="environment_select",
+        on_change=on_env_change
     )
     
     # 显示环境信息
@@ -257,10 +245,10 @@ with st.sidebar:
     if user_config and 'github' in user_config:
         github_token_from_config = user_config['github'].get('token', '')
     
-    # 从 cookies 读取 stored token（备用）
-    stored_token = cookies.get('github_token', '')
-    stored_env = cookies.get('github_token_env', '')
-    stored_user = cookies.get('github_token_user', '')
+    # 从 session_state 读取 stored token（跨请求持久化）
+    stored_token = st.session_state.get('github_token', '')
+    stored_env = st.session_state.get('github_token_env', '')
+    stored_user = st.session_state.get('github_token_user', '')
     
     # 获取默认 token 值（优先级：用户配置 > cookies）
     default_token = ''
@@ -291,9 +279,9 @@ with st.sidebar:
     
     # 如果用户输入了新token，自动保存到cookies
     if st.session_state.get('user_entered_token', False) and token:
-        cookies['github_token'] = token
-        cookies['github_token_env'] = environment
-        cookies['github_token_user'] = selected_user
+        st.session_state.github_token = token
+        st.session_state.github_token_env = environment
+        st.session_state.github_token_user = selected_user
     
     # Token 验证（使用session_state避免重复验证）
     if token:
@@ -451,11 +439,11 @@ with st.sidebar:
             }
             if save_config(config):
                 st.session_state.argocd_config = config
-                # 确保token保存到cookies
+                # 确保token保存到session_state
                 if token:
-                    cookies['github_token'] = token
-                    cookies['github_token_env'] = environment
-                    cookies['github_token_user'] = selected_user
+                    st.session_state.github_token = token
+                    st.session_state.github_token_env = environment
+                    st.session_state.github_token_user = selected_user
                 st.success("✅ 配置已保存")
                 st.rerun()
     
@@ -578,49 +566,35 @@ if query_button:
             
             # 显示查询进度
             st.subheader(f"🔍 查询 {current_environment.upper()} 环境")
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
+
+            # 并发查询所有服务（复用 client 已有 query_multiple_services）
             results = {
                 'success': {},
                 'failed': {},
                 'details': [],
                 'warnings': []
             }
-            
-            # 查询每个服务
-            for i, service in enumerate(services_list):
-                status_text.text(f"正在查询: {service} ({i+1}/{len(services_list)})")
-                progress_bar.progress((i + 1) / len(services_list))
-                
-                try:
-                    images = client.get_service_images(service)
-                    results['success'].update(images)
-                    
-                    # 记录详细信息
-                    for svc, tag in images.items():
-                        results['details'].append({
-                            'service': svc,
-                            'version': tag,
-                            'status': '✅ 成功',
-                            'environment': current_environment.upper()
-                        })
-                        
-                except Exception as e:
-                    error_msg = str(e)
-                    results['failed'][service] = error_msg
-                    results['details'].append({
-                        'service': service,
-                        'version': 'N/A',
-                        'status': f'❌ {error_msg[:50]}...' if len(error_msg) > 50 else f'❌ {error_msg}',
-                        'environment': current_environment.upper()
-                    })
-                    
-                    # 如果是文件不存在错误，添加警告
-                    if "文件不存在" in error_msg or "404" in error_msg:
-                        results['warnings'].append(
-                            f"⚠️ 服务 '{service}' 在 qcore-apps-descriptors 仓库的 {current_environment} 环境中不存在"
-                        )
+            with st.spinner("🚀 正在并发查询所有服务..."):
+                batch_results = client.query_multiple_services(services_list)
+            results['success'] = batch_results.get('success', {})
+            results['failed'] = batch_results.get('failed', {})
+            results['warnings'] = batch_results.get('warnings', [])
+
+            # 重建 details 列表（供表格渲染用）
+            for svc, tag in results['success'].items():
+                results['details'].append({
+                    'service': svc,
+                    'version': tag,
+                    'status': '✅ 成功',
+                    'environment': current_environment.upper()
+                })
+            for svc, err in results['failed'].items():
+                results['details'].append({
+                    'service': svc,
+                    'version': 'N/A',
+                    'status': f'❌ {err[:50]}...' if len(err) > 50 else f'❌ {err}',
+                    'environment': current_environment.upper()
+                })
             
             # 执行对比（如果有上次结果）
             comparison = None
@@ -631,10 +605,6 @@ if query_button:
             # 保存当前结果
             st.session_state.query_results = results
             st.session_state.last_query_time = datetime.now()
-            
-            # 清空进度显示
-            status_text.empty()
-            progress_bar.empty()
             
             # 显示警告（如果有服务名称不匹配）
             if results['warnings']:
@@ -731,7 +701,7 @@ if st.session_state.query_results:
         # 如果有对比数据，应用高亮样式
         if comparison:
             styled_df = df.style.apply(lambda row: highlight_comparison(row, comparison), axis=1)
-            st.dataframe(styled_df, width='stretch', hide_index=True)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             # 添加图例说明
             st.markdown("""
@@ -739,7 +709,7 @@ if st.session_state.query_results:
             🟢 绿色 = 新增服务 | 🟡 黄色 = 版本更新 | 🔴 红色 = 已移除
             """)
         else:
-            st.dataframe(df, width='stretch', hide_index=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
             st.info("💡 提示：再次提取后将显示与本次结果的对比")
         
         # 导出功能
@@ -749,17 +719,17 @@ if st.session_state.query_results:
         col1, col2 = st.columns(2)
         
         with col1:
-            # CSV 导出
-            csv = df.to_csv(index=False, encoding='utf-8-sig')
+            # CSV 导出（None 值替换为空字符串，避免 "None" 字符串）
+            csv = df.fillna('').to_csv(index=False, encoding='utf-8-sig')
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             st.download_button(
                 "📥 下载 CSV",
                 csv,
                 f"services_images_{current_environment}_{timestamp}.csv",
                 "text/csv",
-                width='stretch'
+                use_container_width=True
             )
-        
+
         with col2:
             # JSON 导出
             json_data = {
@@ -774,7 +744,7 @@ if st.session_state.query_results:
                 json_str,
                 f"services_images_{current_environment}_{timestamp}.json",
                 "application/json",
-                width='stretch'
+                use_container_width=True
             )
     
     # 失败详情

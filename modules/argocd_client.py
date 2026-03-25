@@ -10,6 +10,7 @@ import base64
 import urllib3
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 屏蔽证书警告（测试环境）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -290,11 +291,11 @@ class ArgoCDClient:
     
     def query_multiple_services(self, service_names: List[str]) -> Dict[str, any]:
         """
-        批量查询多个服务的镜像信息
-        
+        批量查询多个服务的镜像信息（并发）
+
         Args:
             service_names: 服务名称列表
-            
+
         Returns:
             {
                 'success': {service_name: image_tag, ...},
@@ -305,14 +306,22 @@ class ArgoCDClient:
             'success': {},
             'failed': {}
         }
-        
-        for service_name in service_names:
+
+        def fetch_one(svc: str) -> Tuple[str, Optional[Dict[str, str]], Optional[str]]:
             try:
-                images = self.get_service_images(service_name)
-                results['success'].update(images)
+                return svc, self.get_service_images(svc), None
             except Exception as e:
-                results['failed'][service_name] = str(e)
-        
+                return svc, None, str(e)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(fetch_one, svc): svc for svc in service_names}
+            for future in as_completed(futures):
+                svc, images, err = future.result()
+                if err:
+                    results['failed'][svc] = err
+                else:
+                    results['success'].update(images)
+
         return results
     
     @staticmethod

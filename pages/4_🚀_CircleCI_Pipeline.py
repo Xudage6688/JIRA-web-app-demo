@@ -1,6 +1,8 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
+import urllib.parse
 from pathlib import Path
 import time
 import threading
@@ -21,10 +23,13 @@ from circleCi.monitoring import (
     monitor_pipeline,
     monitor_by_pipeline_number
 )
-from modules.user_config_loader import get_circleci_config, get_user_config_loader
+from modules.user_config_loader import get_circleci_config, get_user_config_loader, build_circleci_headers
 
 # CircleCI API基础URL
 CIRCLECI_API_BASE = 'https://circleci.com/api/v2'
+
+# 全局 Session（连接复用，Keep-Alive）
+_http_session = requests.Session()
 
 # 设置页面配置
 st.set_page_config(
@@ -59,25 +64,43 @@ DEFAULT_BRANCH = user_circleci_config.get('default_branch', 'master')
 def call_circleci_api(endpoint, method='GET', data=None, params=None):
     """调用 CircleCI API"""
     url = f"{CIRCLECI_API_BASE}/{endpoint}"
-    headers = {
-        'Circle-Token': CIRCLECI_API_TOKEN,
-        'Content-Type': 'application/json'
-    }
-    
+    headers = build_circleci_headers(CIRCLECI_API_TOKEN)
+
     try:
         if method == 'GET':
-            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response = _http_session.get(url, headers=headers, params=params, timeout=10)
         elif method == 'POST':
-            response = requests.post(url, headers=headers, json=data, timeout=10)
+            response = _http_session.post(url, headers=headers, json=data, timeout=10)
         else:
             return None
-            
+
         if response.status_code < 500:
             return response
         return None
     except Exception as e:
         st.error(f"API 调用失败: {str(e)}")
         return None
+
+def fetch_recent_branches(project_slug, max_count=8):
+    """
+    查询项目最近的 pipelines，提取不重复的分支名列表。
+
+    Returns:
+        List[str]: 分支名列表（去重，按最新顺序）
+    """
+    response = call_circleci_api(f"project/{project_slug}/pipeline")
+    if not (response and response.status_code == 200):
+        return []
+    items = response.json().get('items', [])
+    seen = []
+    for item in items[:max_count * 2]:  # 多取一些防止重复不足
+        branch = item.get('vcs', {}).get('branch')
+        if branch and branch not in seen:
+            seen.append(branch)
+        if len(seen) >= max_count:
+            break
+    return seen
+
 
 def query_pipelines(project_slug, branch=None, show_progress=False):
     """查询项目的 Pipeline 列表"""
@@ -127,11 +150,11 @@ def query_pipelines(project_slug, branch=None, show_progress=False):
                 'project_name': project_name
             }
         
-        # 使用线程池并发处理（最多5个并发）
+        # 使用线程池并发处理（最多10个并发）
         formatted = []
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             # 提交所有任务
-            futures = {executor.submit(fetch_pipeline_data, p, idx): idx 
+            futures = {executor.submit(fetch_pipeline_data, p, idx): idx
                       for idx, p in enumerate(pipelines)}
             
             # 按提交顺序收集结果
@@ -209,6 +232,18 @@ def get_user_info_by_id(user_id):
         st.session_state.user_cache[user_id] = None
         return None
 
+def _fetch_workflow_jobs_concurrent(workflow_ids):
+    """并发获取多个 workflow 的 jobs"""
+    def fetch_one(wid):
+        resp = call_circleci_api(f"workflow/{wid}/job")
+        if resp and resp.status_code == 200:
+            return resp.json().get('items', [])
+        return []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {wid: executor.submit(fetch_one, wid) for wid in workflow_ids}
+        return {wid: future.result() for wid, future in futures.items()}
+
+
 def get_preprod_approval_info(pipeline_id, project_name=None):
     """
     获取 Pipeline 中 preprod approval 的信息
@@ -219,26 +254,21 @@ def get_preprod_approval_info(pipeline_id, project_name=None):
     try:
         # 获取 workflows
         workflows = get_pipeline_workflows(pipeline_id, api_token=CIRCLECI_API_TOKEN, silent=True)
-        
+
         if not workflows:
             return None
-        
+
+        # 并发获取所有 workflow 的 jobs
+        workflow_ids = [w.get('id') for w in workflows]
+        all_jobs_map = _fetch_workflow_jobs_concurrent(workflow_ids)
+
         # 收集所有 preprod approval jobs
         all_preprod_approvals = []
-        
-        # 遍历 workflows，查找 preprod 相关的 approval job
+
         for workflow in workflows:
             workflow_id = workflow.get('id')
             workflow_name = workflow.get('name', '').lower()
-            
-            # 获取该 workflow 的 jobs
-            response = call_circleci_api(f"workflow/{workflow_id}/job")
-            
-            if not response or response.status_code != 200:
-                continue
-            
-            data = response.json()
-            all_jobs = data.get('items', [])
+            all_jobs = all_jobs_map.get(workflow_id, [])
             
             # 查找 approval 类型的 job
             for job in all_jobs:
@@ -481,6 +511,57 @@ def format_time_ago(utc_time_str):
     except Exception as e:
         return ""
 
+
+def _copy_button(text: str, key: str, label: str = "📋"):
+    """点击复制按钮（JS clipboard API）"""
+    aid = f"copy_{key}"
+    html = f"""
+<script>
+function copy_{key}() {{
+    navigator.clipboard.writeText({repr(text)}).then(() => {{
+        var el = document.getElementById({repr(aid)});
+        if(el) {{ el.textContent = '✅ 已复制'; setTimeout(function(){{ el.textContent = {repr(label)}; }}, 1500); }}
+    }});
+}}
+</script>
+<span id="{aid}" style="
+    display:inline-flex; align-items:center; gap:2px;
+    background:#f0f0f0; border:1px solid #ddd; border-radius:4px;
+    padding:1px 6px; font-size:13px; cursor:pointer;
+    color:#333; user-select:none;
+" onclick="copy_{key}()">{label}</span>
+"""
+    st.html(html)
+
+
+def copy_button(text: str, key: str):
+    """点击复制按钮（通用版，自动注入 clipboard 逻辑）"""
+    btn_id = f"cpbtn_{key}"
+    # 使用 encodeURIComponent 确保中文字符正确处理
+    js = f"""
+<script>
+(function() {{
+  window._copyText_{key} = function() {{
+    var raw = "{text.replace('"', '\\"')}';
+    try {{
+      navigator.clipboard.writeText(raw).then(function() {{
+        var el = document.getElementById("{btn_id}");
+        if(el) {{ el.textContent = "✅ 已复制"; setTimeout(function(){{ el.textContent = "📋"; }}, 1500); }}
+      }}).catch(function(err) {{}});
+    }} catch(e) {{}}
+  }}
+}})();
+</script>
+<span id="{btn_id}" style="
+    display:inline-flex; align-items:center; gap:3px;
+    background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;
+    padding:0px 8px; font-size:12px; cursor:pointer;
+    color:#2e7d32; user-select:none; margin-left:4px;
+" onclick="window._copyText_{key}()">📋</span>
+"""
+    st.html(js)
+
+
 # 初始化session state
 if 'monitoring_active' not in st.session_state:
     st.session_state.monitoring_active = False
@@ -512,10 +593,14 @@ if 'trigger_project' not in st.session_state:
     st.session_state.trigger_project = DEFAULT_PROJECT
 if 'trigger_branch' not in st.session_state:
     st.session_state.trigger_branch = DEFAULT_BRANCH
+if 'recent_branches' not in st.session_state:
+    st.session_state.recent_branches = []
 if 'query_project' not in st.session_state:
     st.session_state.query_project = DEFAULT_PROJECT
 if 'query_branch' not in st.session_state:
     st.session_state.query_branch = ""
+if 'pending_tab3_monitor' not in st.session_state:
+    st.session_state.pending_tab3_monitor = None
 
 # 标题
 st.title("🚀 CircleCI Pipeline 管理工具")
@@ -560,7 +645,7 @@ with st.sidebar:
         st.write("暂无历史记录")
 
 # 创建标签页导航
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 触发Pipeline", "📋 Pipeline列表", "📊 监控Pipeline", "✅ 审批管理"])
+tab1, tab2, tab3 = st.tabs(["🎯 触发Pipeline", "📋 Pipeline列表", "📊 监控Pipeline"])
 
 # 侧边栏设置
 with st.sidebar:
@@ -600,43 +685,80 @@ with tab1:
     except Exception as e:
         print(f"Warning: Could not load services list: {e}")
     
-    with st.form("trigger_form"):
-        # 项目名称选择（使用 session state 保持值）
-        try:
-            default_index = service_list_for_trigger.index(st.session_state.trigger_project)
-        except (ValueError, AttributeError):
-            default_index = service_list_for_trigger.index(DEFAULT_PROJECT) if DEFAULT_PROJECT in service_list_for_trigger else 0
-        
-        project_name = st.selectbox(
-            "项目名称",
-            options=service_list_for_trigger,
-            index=default_index,
-            help="选择项目或直接输入关键字快速过滤"
-        )
-        
-        # 分支配置（使用 session state 保持值）
+    # 分支输入区（表单外，支持"查最新"按钮）
+    branch_col1, branch_col2 = st.columns([3, 1])
+    with branch_col1:
         branch = st.text_input(
             "分支名称",
             value=st.session_state.trigger_branch,
             placeholder="例如: master, develop, SP-12345",
             help="要触发的分支名称"
         )
-        
-        # 显示完整的 Project Slug（只读）
-        full_project_slug = f"{VCS_TYPE}/{ORGANIZATION}/{project_name}"
-        st.info(f"📝 完整项目路径: `{full_project_slug}`")
-        
-        # 提交按钮
+    with branch_col2:
+        st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
+        fetch_clicked = st.button(
+            "🔍 查最新",
+            key="fetch_latest_branch",
+            use_container_width=True,
+            help="查询所选项目最近构建的分支"
+        )
+
+    # 查询最新分支
+    if fetch_clicked:
+        current_project = st.session_state.trigger_project or DEFAULT_PROJECT
+        full_slug = f"{VCS_TYPE}/{ORGANIZATION}/{current_project}"
+        with st.spinner("查询最近分支中..."):
+            recent_branches = fetch_recent_branches(full_slug)
+        if recent_branches:
+            st.session_state.recent_branches = recent_branches
+        else:
+            st.warning("未查询到最近分支，请确认该项目有历史构建记录")
+
+    # 分支下拉选择（查询有结果时显示）
+    if st.session_state.get("recent_branches"):
+        selected = st.selectbox(
+            "👇 选择分支（点击后自动填入上方输入框）",
+            options=[""] + st.session_state.recent_branches,
+            key="branch_selector"
+        )
+        if selected:
+            st.session_state.trigger_branch = selected
+            st.rerun()
+
+    # 项目名同步到 session_state（供查最新使用）
+    try:
+        default_index = service_list_for_trigger.index(st.session_state.trigger_project)
+    except (ValueError, AttributeError):
+        default_index = service_list_for_trigger.index(DEFAULT_PROJECT) if DEFAULT_PROJECT in service_list_for_trigger else 0
+
+    def on_project_change():
+        st.session_state.trigger_project = st.session_state.trigger_project_select
+
+    project_name = st.selectbox(
+        "项目名称",
+        options=service_list_for_trigger,
+        index=default_index,
+        key="trigger_project_select",
+        on_change=on_project_change,
+        help="选择项目或直接输入关键字快速过滤"
+    )
+
+    # 显示完整的 Project Slug（只读）
+    full_project_slug = f"{VCS_TYPE}/{ORGANIZATION}/{project_name}"
+    st.info(f"📝 完整项目路径: `{full_project_slug}`")
+
+    with st.form("trigger_form"):
+        # 提交按钮（表单只负责提交，不含分支输入）
         submit_button = st.form_submit_button("🚀 触发 Pipeline", type="primary", use_container_width=True)
-        
+
         if submit_button:
             # 保存输入值到 session state（保持状态）
             st.session_state.trigger_project = project_name
             st.session_state.trigger_branch = branch
-            
+
             # 构建完整的 project_slug
             project_slug = full_project_slug
-            
+
             # 验证项目配置
             if not validate_project_slug(project_slug):
                 st.error("❌ 项目 Slug 格式错误")
@@ -646,7 +768,7 @@ with tab1:
                     try:
                         # 触发pipeline，传入API Token
                         result = trigger_circleci_pipeline(
-                            project_slug, 
+                            project_slug,
                             branch,
                             api_token=CIRCLECI_API_TOKEN
                         )
@@ -671,15 +793,21 @@ with tab1:
                                 'time': time.strftime('%Y-%m-%d %H:%M:%S')
                             })
                             
-                            # 设置当前pipeline ID
+                            # 设置当前pipeline ID（供其他 Tab 使用）
                             st.session_state.current_pipeline_id = pipeline_id
-                            
-                            # 提示用户可以使用其他功能
-                            st.info("💡 **快速操作提示:**\n"
-                                   "- 切换到「📊 监控Pipeline」标签页可以实时监控状态\n"
-                                   "- 切换到「✅ 审批管理」标签页可以审批待处理的 Jobs\n"
-                                   "- Pipeline ID 已自动填充到各个标签页")
-                            
+
+                            st.success("✅ Pipeline 触发成功！")
+                            st.write(f"**Pipeline Number:** {pipeline_number}")
+                            st.code(pipeline_id, language=None)
+                            st.markdown("---")
+                            st.markdown(
+                                "#### 👉 **下一步：切换到「📊 监控Pipeline」标签页，"
+                                "粘贴上方 Pipeline ID 查看实时状态**"
+                            )
+                            st.markdown(
+                                "📌 **提示：** 审批面板已内嵌在监控页底部，"
+                                "监控状态的同时可直接审批，**无需切换 Tab**"
+                            )
                             st.balloons()
                         else:
                             st.error("❌ Pipeline 触发失败")
@@ -808,18 +936,21 @@ with tab2:
                     st.write(f"**状态:** {p['state']}")
                 
                 with col_p2:
-                    st.write(f"**分支:** {p['branch'] or 'N/A'}")
-                    st.write(f"**触发者:** {p['actor']}")
-                    st.write(f"**提交:** {p['commit_subject'] or 'N/A'}")
+                    branch_val = p['branch'] or 'N/A'
+                    revision_val = p.get('revision')
+                    revision_display = revision_val[:8] if revision_val else 'N/A'
+                    commit_val = p['commit_subject'] or 'N/A'
+                    # 分支：可复制的只读文本框（用户可选中 Ctrl+C）
+                    st.text_input("分支", value=branch_val, disabled=True, label_visibility="collapsed", key=f"branch_{i}_{p['number']}")
+                    st.text(f"Revision: {revision_display}")
+                    st.text(f"触发者: {p['actor']}")
+                    st.text(f"提交: {commit_val}")
                 
                 with col_p3:
                     if st.button("📊 监控", key=f"monitor_{i}", use_container_width=True, type="primary"):
                         st.session_state.current_pipeline_id = p['id']
-                        st.success(f"✅ 已设置 Pipeline ID")
-                        st.info("💡 **快速操作提示:**\n"
-                               "- 切换到「📊 监控Pipeline」可实时监控\n"
-                               "- 切换到「✅ 审批管理」可审批 Jobs\n"
-                               "- Pipeline ID 已自动填充")
+                        st.session_state.pending_tab3_monitor = p['id']
+                        st.rerun()
                 
                 # 显示 Preprod Approval 信息
                 preprod_approval = p.get('preprod_approval')
@@ -873,6 +1004,14 @@ with tab2:
                                 'error': '⚠️'
                             }.get(approval_status, '❓')
                             st.caption(f"{status_emoji} Job: {job_name} ({approval_status})")
+
+                        # P2: 待审批时在 Tab2 直接提供审批入口（无需切换 Tab）
+                        if approval_status in ('pending', 'on_hold') and p.get('preprod_approval', {}).get('job_name'):
+                            approval_job_name = p['preprod_approval']['job_name']
+                            # 获取 approval request id（从 preprod_approval 中获取）
+                            # 注意：Tab2 的 preprod_approval 来自 query_pipelines，仅含展示信息不含 approval_request_id
+                            # 所以这里提供跳转引导
+                            st.warning("⏸️ 此 Pipeline 有待审批 Job，可直接前往监控页审批")
                 else:
                     # 没有 preprod approval 信息
                     st.markdown("---")
@@ -885,614 +1024,212 @@ with tab2:
 # Tab 3: 监控Pipeline
 with tab3:
     st.header("📊 监控 Pipeline")
-    
-    # 监控方式选择
-    monitor_mode = st.radio(
-        "监控方式",
-        ["Pipeline ID", "Pipeline Number"],
-        horizontal=True
-    )
-    
-    if monitor_mode == "Pipeline ID":
-        # 使用Pipeline ID监控
-        pipeline_id_input = st.text_input(
-            "Pipeline ID",
-            value=st.session_state.current_pipeline_id if st.session_state.current_pipeline_id else "",
-            help="输入要监控的 Pipeline ID"
-        )
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            check_status_btn = st.button("🔍 查看状态", use_container_width=True)
-        with col_btn2:
-            monitor_btn = st.button("📊 开始监控", use_container_width=True, type="primary")
-        
-        if check_status_btn and pipeline_id_input:
-            with st.spinner("正在获取详细状态..."):
-                # 获取pipeline状态，传入API Token
-                pipeline_data = get_pipeline_status(pipeline_id_input, api_token=CIRCLECI_API_TOKEN)
-                
-                if pipeline_data:
-                    st.success("✅ 状态获取成功")
-                    
-                    # 显示基本信息（扩展）
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        st.metric("Pipeline Number", f"#{pipeline_data.get('number', 'N/A')}")
-                        st.metric("状态", pipeline_data.get('state', 'unknown').upper())
-                    with col_info2:
-                        st.metric("VCS 分支", pipeline_data.get('vcs', {}).get('branch', 'N/A'))
-                        trigger_actor = pipeline_data.get('trigger', {}).get('actor', {}).get('login', 'Unknown')
-                        st.metric("触发者", trigger_actor)
-                    with col_info3:
-                        created_at = pipeline_data.get('created_at', '')
-                        if created_at:
-                            beijing_time = convert_utc_to_beijing(created_at)
-                            time_ago = format_time_ago(created_at)
-                            st.metric("创建时间", f"{time_ago}")
-                            st.caption(beijing_time)
-                        else:
-                            st.metric("创建时间", "N/A")
-                        
-                        project_slug = pipeline_data.get('project_slug', 'N/A')
-                        project_name = project_slug.split('/')[-1] if '/' in project_slug else project_slug
-                        st.metric("项目", project_name)
-                    
-                    # 显示提交信息
-                    st.markdown("---")
-                    st.subheader("📝 Git 提交信息")
-                    vcs = pipeline_data.get('vcs', {})
-                    col_vcs1, col_vcs2 = st.columns([2, 1])
-                    with col_vcs1:
-                        commit_subject = vcs.get('commit', {}).get('subject', 'N/A')
-                        st.write(f"**提交消息:** {commit_subject}")
-                        commit_body = vcs.get('commit', {}).get('body', '')
-                        if commit_body:
-                            with st.expander("查看完整提交信息"):
-                                st.code(commit_body)
-                    with col_vcs2:
-                        revision = vcs.get('revision', 'N/A')
-                        st.code(f"Revision: {revision[:8]}...", language="text")
-                        branch = vcs.get('branch', 'N/A')
-                        st.code(f"Branch: {branch}", language="text")
-                    
-                    # 获取workflows状态（详细）
-                    st.markdown("---")
-                    workflows = get_pipeline_workflows(pipeline_id_input, api_token=CIRCLECI_API_TOKEN)
-                    if workflows:
-                        st.subheader(f"🔄 Workflows ({len(workflows)})")
-                        
-                        for idx, workflow in enumerate(workflows):
-                            workflow_id = workflow.get('id', 'N/A')
-                            workflow_name = workflow.get('name', 'Unknown')
-                            workflow_status = workflow.get('status', 'unknown')
-                            display_text, emoji = format_status(workflow_status)
-                            
-                            # 计算workflow时长
-                            started_at = workflow.get('started_at')
-                            stopped_at = workflow.get('stopped_at')
-                            duration_str = format_duration(started_at, stopped_at) if started_at else 'N/A'
-                            
-                            with st.expander(f"{emoji} **{workflow_name}** - {display_text} (⏱️ {duration_str})", expanded=(idx==0)):
-                                # Workflow详细信息
-                                col_w1, col_w2 = st.columns(2)
-                                with col_w1:
-                                    st.write(f"**Workflow ID:** `{workflow_id[:16]}...`")
-                                    st.write(f"**状态:** {display_text} {emoji}")
-                                with col_w2:
-                                    if started_at:
-                                        beijing_start = convert_utc_to_beijing(started_at)
-                                        st.write(f"**开始时间:** {beijing_start}")
-                                    if stopped_at:
-                                        beijing_stop = convert_utc_to_beijing(stopped_at)
-                                        st.write(f"**结束时间:** {beijing_stop}")
-                                
-                                # 获取并显示Jobs
-                                st.write("---")
-                                st.write("**📋 Jobs:**")
-                                try:
-                                    response = call_circleci_api(f"workflow/{workflow_id}/job")
-                                    if response and response.status_code == 200:
-                                        jobs_data = response.json()
-                                        jobs = jobs_data.get('items', [])
-                                        
-                                        if jobs:
-                                            # 统计信息
-                                            job_stats = {
-                                                'success': 0,
-                                                'running': 0,
-                                                'failed': 0,
-                                                'on_hold': 0,
-                                                'other': 0
-                                            }
-                                            
-                                            for job in jobs:
-                                                status = job.get('status', 'unknown')
-                                                if status == 'success':
-                                                    job_stats['success'] += 1
-                                                elif status in ['running', 'queued']:
-                                                    job_stats['running'] += 1
-                                                elif status in ['failed', 'failing']:
-                                                    job_stats['failed'] += 1
-                                                elif status == 'on_hold':
-                                                    job_stats['on_hold'] += 1
-                                                else:
-                                                    job_stats['other'] += 1
-                                            
-                                            # 显示统计
-                                            col_stat1, col_stat2, col_stat3, col_stat4, col_stat5 = st.columns(5)
-                                            with col_stat1:
-                                                st.metric("✅ 成功", job_stats['success'])
-                                            with col_stat2:
-                                                st.metric("🔄 运行中", job_stats['running'])
-                                            with col_stat3:
-                                                st.metric("❌ 失败", job_stats['failed'])
-                                            with col_stat4:
-                                                st.metric("⏸️ 待审批", job_stats['on_hold'])
-                                            with col_stat5:
-                                                st.metric("📊 总计", len(jobs))
-                                            
-                                            # 显示Job列表
-                                            st.write("")
-                                            for job in jobs:
-                                                job_name = job.get('name', 'Unknown')
-                                                job_status = job.get('status', 'unknown')
-                                                job_type = job.get('type', 'build')
-                                                job_number = job.get('job_number', 'N/A')
-                                                
-                                                job_display, job_emoji = format_status(job_status)
-                                                
-                                                # 计算Job时长
-                                                job_started = job.get('started_at')
-                                                job_stopped = job.get('stopped_at')
-                                                job_duration = format_duration(job_started, job_stopped) if job_started else 'N/A'
-                                                
-                                                # 根据类型显示不同图标
-                                                type_icon = "🔧" if job_type == "build" else "✅" if job_type == "approval" else "📦"
-                                                
-                                                st.write(f"{type_icon} {job_emoji} **{job_name}** (#{job_number}) - {job_display} - ⏱️ {job_duration}")
-                                        else:
-                                            st.info("暂无 Jobs 信息")
-                                    else:
-                                        st.warning("无法获取 Jobs 信息")
-                                except Exception as e:
-                                    st.error(f"获取 Jobs 信息失败: {str(e)}")
-                    else:
-                        st.info("暂无 Workflows 信息")
-                else:
-                    st.error("❌ 无法获取 Pipeline 状态")
-        
-        if monitor_btn and pipeline_id_input:
-            st.info("📊 开始实时监控...")
-            
-            # 创建状态显示区域
-            status_placeholder = st.empty()
-            progress_placeholder = st.empty()
-            
-            # 监控参数
-            check_interval = 5
-            max_checks = 360  # 最多检查30分钟
-            
-            # 监控循环
-            start_time = time.time()
-            check_count = 0
-            previous_status = None
-            
-            final_statuses = ['success', 'failing', 'failed', 'error', 'canceled']
-            
-            while check_count < max_checks:
-                check_count += 1
-                elapsed_time = int(time.time() - start_time)
-                
-                # 获取状态
-                pipeline_data = get_pipeline_status(pipeline_id_input, silent=True, api_token=CIRCLECI_API_TOKEN)
-                
-                if pipeline_data:
-                    workflows = get_pipeline_workflows(pipeline_id_input, silent=True, api_token=CIRCLECI_API_TOKEN)
-                    
-                    # 获取实际状态
-                    if workflows and len(workflows) > 0:
-                        statuses = [w.get('status', 'unknown') for w in workflows]
-                        if 'running' in statuses:
-                            current_status = 'running'
-                        elif 'on_hold' in statuses:
-                            current_status = 'on_hold'
-                        else:
-                            current_status = statuses[-1]
-                    else:
-                        current_status = pipeline_data.get('state', 'unknown')
-                    
-                    # 检查是否有 "Do you want to deploy" 的 approval job 成功完成
-                    deploy_approval_completed = False
-                    if workflows:
-                        for workflow in workflows:
-                            workflow_id = workflow.get('id')
-                            if workflow_id:
-                                jobs_data = get_workflow_jobs(workflow_id)
-                                if jobs_data and 'jobs' in jobs_data:
-                                    for job in jobs_data['jobs']:
-                                        job_name = job.get('name', '')
-                                        job_status = job.get('status', '')
-                                        # 检查是否是部署审批 job 且已成功
-                                        if 'Do you want to deploy' in job_name and job_status == 'success':
-                                            deploy_approval_completed = True
-                                            break
-                            if deploy_approval_completed:
-                                break
-                    
-                    # 显示状态
-                    display_text, emoji = format_status(current_status)
-                    
-                    status_msg = f"{emoji} **当前状态:** {display_text}\n\n"
-                    status_msg += f"**运行时间:** {elapsed_time}秒 ({elapsed_time // 60}分{elapsed_time % 60}秒)\n\n"
-                    status_msg += f"**检查次数:** {check_count}"
-                    
-                    if deploy_approval_completed:
-                        status_msg += "\n\n🎯 **部署审批已完成**"
-                    
-                    status_placeholder.info(status_msg)
-                    
-                    # 显示进度条
-                    if current_status == 'running':
-                        progress_placeholder.progress(min(check_count / max_checks, 1.0))
-                    
-                    # 检查是否完成：优先检查部署审批是否完成
-                    if deploy_approval_completed:
-                        status_placeholder.success(f"✅ 部署审批已完成！Pipeline 可以继续部署到 Preprod")
-                        st.info(f"总耗时: {elapsed_time}秒 ({elapsed_time // 60}分{elapsed_time % 60}秒)")
-                        break
-                    elif current_status in final_statuses:
-                        # 如果 pipeline 已结束但没有找到部署审批完成，说明可能失败了
-                        if current_status == 'success':
-                            status_placeholder.success(f"✅ Pipeline 完成: {display_text}")
-                        else:
-                            status_placeholder.error(f"❌ Pipeline 完成但未找到部署审批: {display_text}")
-                        
-                        st.info(f"总耗时: {elapsed_time}秒 ({elapsed_time // 60}分{elapsed_time % 60}秒)")
-                        break
-                    
-                    previous_status = current_status
-                else:
-                    status_placeholder.warning(f"⚠️ 无法获取状态，继续重试... (第{check_count}次)")
-                
-                # 等待下一次检查
-                time.sleep(check_interval)
-            
-            if check_count >= max_checks:
-                st.warning("⏱️ 达到最大监控时长")
-    
-    else:
-        # 使用Pipeline Number监控
-        col_input1, col_input2 = st.columns(2)
-        with col_input1:
-            pipeline_number = st.number_input(
-                "Pipeline Number",
-                min_value=1,
-                value=1,
-                help="输入要监控的 Pipeline Number"
-            )
-        with col_input2:
-            monitor_project = st.text_input(
-                "项目名称",
-                value=DEFAULT_PROJECT,
-                help="项目名称（不是完整路径）"
-            )
-        
-        if st.button("📊 开始监控 (通过Number)", use_container_width=True, type="primary"):
-            # 构建完整的 project_slug
-            full_slug = f"{VCS_TYPE}/{ORGANIZATION}/{monitor_project}"
-            
-            with st.spinner(f"正在查找 Pipeline #{pipeline_number}..."):
-                # 导入函数
-                from circleCi.monitoring import get_pipeline_id_by_number
-                
-                # 查找Pipeline ID
-                pipeline_id = get_pipeline_id_by_number(full_slug, pipeline_number, api_token=CIRCLECI_API_TOKEN)
-                
-                if pipeline_id:
-                    st.success(f"✅ 找到 Pipeline #{pipeline_number}")
-                    st.info(f"**Pipeline ID:** {pipeline_id}")
-                    
-                    # 保存到session state
-                    st.session_state.current_pipeline_id = pipeline_id
-                    
-                    # 开始监控
-                    st.info("📊 开始实时监控...")
-                    
-                    # 创建状态显示区域
-                    status_placeholder = st.empty()
-                    progress_placeholder = st.empty()
-                    
-                    # 监控参数
-                    check_interval = 5
-                    max_checks = 360
-                    
-                    start_time = time.time()
-                    check_count = 0
-                    previous_status = None
-                    final_statuses = ['success', 'failing', 'failed', 'error', 'canceled']
-                    
-                    while check_count < max_checks:
-                        check_count += 1
-                        elapsed_time = int(time.time() - start_time)
-                        
-                        # 获取状态
-                        pipeline_data = get_pipeline_status(pipeline_id, silent=True, api_token=CIRCLECI_API_TOKEN)
-                        
-                        if pipeline_data:
-                            workflows = get_pipeline_workflows(pipeline_id, silent=True, api_token=CIRCLECI_API_TOKEN)
-                            
-                            # 获取实际状态
-                            if workflows and len(workflows) > 0:
-                                statuses = [w.get('status', 'unknown') for w in workflows]
-                                if 'running' in statuses:
-                                    current_status = 'running'
-                                elif 'on_hold' in statuses:
-                                    current_status = 'on_hold'
-                                else:
-                                    current_status = statuses[-1]
-                            else:
-                                current_status = pipeline_data.get('state', 'unknown')
-                            
-                            # 显示状态
-                            display_text, emoji = format_status(current_status)
-                            
-                            status_placeholder.info(
-                                f"{emoji} **当前状态:** {display_text}\n\n"
-                                f"**Pipeline Number:** #{pipeline_number}\n\n"
-                                f"**运行时间:** {elapsed_time}秒 ({elapsed_time // 60}分{elapsed_time % 60}秒)\n\n"
-                                f"**检查次数:** {check_count}"
-                            )
-                            
-                            # 显示进度条
-                            if current_status == 'running':
-                                progress_placeholder.progress(min(check_count / max_checks, 1.0))
-                            
-                            # 检查是否完成
-                            if current_status in final_statuses:
-                                if current_status in ['success', 'failing']:
-                                    status_placeholder.success(f"✅ Pipeline #{pipeline_number} 完成: {display_text}")
-                                else:
-                                    status_placeholder.error(f"❌ Pipeline #{pipeline_number} 完成: {display_text}")
-                                
-                                st.info(f"总耗时: {elapsed_time}秒 ({elapsed_time // 60}分{elapsed_time % 60}秒)")
-                                break
-                            
-                            previous_status = current_status
-                        else:
-                            status_placeholder.warning(f"⚠️ 无法获取状态，继续重试... (第{check_count}次)")
-                        
-                        # 等待下一次检查
-                        time.sleep(check_interval)
-                    
-                    if check_count >= max_checks:
-                        st.warning("⏱️ 达到最大监控时长")
-                        
-                else:
-                    st.error(f"❌ 未找到 Pipeline #{pipeline_number}")
-                    st.info(f"项目: {full_slug}")
-                    st.warning("可能的原因：\n- Pipeline Number 不存在\n- Pipeline 不在最近的30个记录中\n- 项目名称或组织名称不正确")
 
-# Tab 4: 审批管理
-with tab4:
-    st.header("✅ 审批管理")
-    
-    st.info("💡 此功能用于审批 CircleCI 中处于等待状态（on_hold）的 approval jobs")
-    
-    # 显示当前 Pipeline ID 来源提示
-    if st.session_state.current_pipeline_id:
-        st.success(f"✅ 已自动填充 Pipeline ID（来自触发/监控/列表）")
-        st.code(st.session_state.current_pipeline_id, language=None)
-    
-    # 输入 Pipeline ID - 移除固定 key，让它根据 value 自动更新
-    approval_pipeline_id = st.text_input(
+    # Pipeline ID 查询
+    _auto_pipeline_id = st.session_state.pending_tab3_monitor or st.session_state.current_pipeline_id or ""
+    pipeline_id_input = st.text_input(
         "Pipeline ID",
-        value=st.session_state.current_pipeline_id if st.session_state.current_pipeline_id else "",
-        help="输入要查找 approval jobs 的 Pipeline ID（已自动填充最近操作的 Pipeline ID）",
-        placeholder="输入或从其他标签页自动填充 Pipeline ID"
+        value=_auto_pipeline_id,
+        help="输入要查询状态的 Pipeline ID"
     )
-    
-    col_search, col_clear = st.columns([3, 1])
-    
-    with col_search:
-        search_btn = st.button("🔍 查找待审批的 Jobs", type="primary", use_container_width=True)
-    
-    with col_clear:
-        if st.session_state.approval_workflows:
-            if st.button("🗑️ 清空", use_container_width=True, key="clear_approval_results"):
-                st.session_state.approval_workflows = None
-                st.session_state.approval_search_pipeline_id = None
-                st.rerun()
-    
-    if search_btn:
-        if not approval_pipeline_id:
-            st.warning("⚠️ 请输入 Pipeline ID")
-        else:
-            with st.spinner("正在查找待审批的 Jobs..."):
-                # 获取 workflows
-                workflows = get_pipeline_workflows(approval_pipeline_id, api_token=CIRCLECI_API_TOKEN)
-                
+    _auto_trigger = st.session_state.pending_tab3_monitor is not None
+    check_status_btn = st.button("🔍 查看状态", type="primary", use_container_width=True)
+
+    if _auto_trigger:
+        st.session_state.pending_tab3_monitor = None
+
+    if (check_status_btn or _auto_trigger) and pipeline_id_input:
+        with st.spinner("正在获取详细状态..."):
+            pipeline_data = get_pipeline_status(pipeline_id_input, api_token=CIRCLECI_API_TOKEN)
+
+            if pipeline_data:
+                st.success("✅ 状态获取成功")
+
+                col_info1, col_info2, col_info3 = st.columns(3)
+                with col_info1:
+                    st.metric("Pipeline Number", f"#{pipeline_data.get('number', 'N/A')}")
+                    st.metric("状态", pipeline_data.get('state', 'unknown').upper())
+                with col_info2:
+                    st.metric("VCS 分支", pipeline_data.get('vcs', {}).get('branch', 'N/A'))
+                    trigger_actor = pipeline_data.get('trigger', {}).get('actor', {}).get('login', 'Unknown')
+                    st.metric("触发者", trigger_actor)
+                with col_info3:
+                    created_at = pipeline_data.get('created_at', '')
+                    if created_at:
+                        beijing_time = convert_utc_to_beijing(created_at)
+                        time_ago = format_time_ago(created_at)
+                        st.metric("创建时间", f"{time_ago}")
+                        st.caption(beijing_time)
+                    else:
+                        st.metric("创建时间", "N/A")
+                    project_slug = pipeline_data.get('project_slug', 'N/A')
+                    project_name = project_slug.split('/')[-1] if '/' in project_slug else project_slug
+                    st.metric("项目", project_name)
+
+                st.markdown("---")
+                st.subheader("📝 Git 提交信息")
+                vcs = pipeline_data.get('vcs', {})
+                col_vcs1, col_vcs2 = st.columns([2, 1])
+                with col_vcs1:
+                    commit_subject = vcs.get('commit', {}).get('subject', 'N/A')
+                    st.write(f"**提交消息:** {commit_subject}")
+                    commit_body = vcs.get('commit', {}).get('body', '')
+                    if commit_body:
+                        with st.expander("查看完整提交信息"):
+                            st.code(commit_body)
+                with col_vcs2:
+                    revision = vcs.get('revision', 'N/A')
+                    st.code(f"Revision: {revision[:8]}...", language="text")
+                    branch = vcs.get('branch', 'N/A')
+                    st.code(f"Branch: {branch}", language="text")
+
+                # Workflows
+                st.markdown("---")
+                workflows = get_pipeline_workflows(pipeline_id_input, api_token=CIRCLECI_API_TOKEN)
                 if workflows:
-                    # 保存到 session_state
-                    st.session_state.approval_workflows = workflows
-                    st.session_state.approval_search_pipeline_id = approval_pipeline_id
-                    st.success(f"✅ 找到 {len(workflows)} 个 Workflows")
+                    st.subheader(f"🔄 Workflows ({len(workflows)})")
+                    wf_ids = [w.get('id') for w in workflows if w.get('id')]
+                    wf_jobs_map = _fetch_workflow_jobs_concurrent(wf_ids)
+
+                    for idx, workflow in enumerate(workflows):
+                        wf_id = workflow.get('id', 'N/A')
+                        wf_name = workflow.get('name', 'Unknown')
+                        wf_status = workflow.get('status', 'unknown')
+                        disp_txt, emoji = format_status(wf_status)
+                        started_at = workflow.get('started_at')
+                        stopped_at = workflow.get('stopped_at')
+                        duration_str = format_duration(started_at, stopped_at) if started_at else 'N/A'
+
+                        with st.expander(f"{emoji} **{wf_name}** - {disp_txt} (⏱️ {duration_str})", expanded=(idx == 0)):
+                            wc1, wc2 = st.columns(2)
+                            with wc1:
+                                st.write(f"**Workflow ID:** `{wf_id[:16]}...`")
+                                st.write(f"**状态:** {disp_txt} {emoji}")
+                            with wc2:
+                                if started_at:
+                                    st.write(f"**开始时间:** {convert_utc_to_beijing(started_at)}")
+                                if stopped_at:
+                                    st.write(f"**结束时间:** {convert_utc_to_beijing(stopped_at)}")
+
+                            st.write("---")
+                            st.write("**📋 Jobs:**")
+                            jobs = wf_jobs_map.get(wf_id, [])
+                            if jobs:
+                                stats = {'success': 0, 'running': 0, 'failed': 0, 'on_hold': 0, 'other': 0}
+                                for j in jobs:
+                                    s = j.get('status', 'unknown')
+                                    if s == 'success': stats['success'] += 1
+                                    elif s in ['running', 'queued']: stats['running'] += 1
+                                    elif s in ['failed', 'failing']: stats['failed'] += 1
+                                    elif s == 'on_hold': stats['on_hold'] += 1
+                                    else: stats['other'] += 1
+                                sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+                                sc1.metric("✅ 成功", stats['success'])
+                                sc2.metric("🔄 运行中", stats['running'])
+                                sc3.metric("❌ 失败", stats['failed'])
+                                sc4.metric("⏸️ 待审批", stats['on_hold'])
+                                sc5.metric("📊 总计", len(jobs))
+                                for j in jobs:
+                                    jd, je = format_status(j.get('status', 'unknown'))
+                                    jdur = format_duration(j.get('started_at'), j.get('stopped_at'))
+                                    icon = "🔧" if j.get('type') == "build" else "✅" if j.get('type') == "approval" else "📦"
+                                    st.write(f"{icon} {je} **{j.get('name', 'Unknown')}** (#{j.get('job_number', 'N/A')}) - {jd} - ⏱️ {jdur}")
+                            else:
+                                st.info("暂无 Jobs 信息")
                 else:
-                    st.session_state.approval_workflows = None
-                    st.error("❌ 无法获取 Pipeline 的 Workflows")
-                    st.info(f"Pipeline ID: {approval_pipeline_id}")
-    
-    # 显示查询结果（从 session_state 读取）
-    if st.session_state.approval_workflows:
-        workflows = st.session_state.approval_workflows
-        search_pipeline_id = st.session_state.approval_search_pipeline_id
-        
-        st.info(f"📊 显示 {len(workflows)} 个 Workflows（Pipeline ID: {search_pipeline_id[:16]}...）")
-        
-        all_approval_jobs = []
-        
-        # 遍历每个 workflow 查找 approval jobs
-        for workflow in workflows:
-            workflow_id = workflow.get('id')
-            workflow_name = workflow.get('name')
-            workflow_status = workflow.get('status')
-            
-            st.subheader(f"🔄 Workflow: {workflow_name}")
-            st.write(f"**状态:** {workflow_status}")
-            st.write(f"**ID:** `{workflow_id}`")
-            
-            # 获取该 workflow 的 jobs
-            jobs_data = get_workflow_jobs(workflow_id)
-            
-            if jobs_data:
-                approval_jobs = jobs_data.get('approval_jobs', [])
-                all_jobs = jobs_data.get('jobs', [])
-                
-                st.write(f"**总 Jobs 数:** {len(all_jobs)}")
-                st.write(f"**待审批 Jobs 数:** {len(approval_jobs)}")
-                
-                if approval_jobs:
-                    st.success(f"🎯 找到 {len(approval_jobs)} 个待审批的 Jobs")
-                    
-                    for job in approval_jobs:
-                        # 判断是否是 Preprod 环境：检查 workflow 名称或 job 名称中是否包含 preprod（不区分大小写）
-                        is_preprod = (
-                            'preprod' in workflow_name.lower() or 
-                            'preprod' in job.get('name', '').lower()
-                        )
-                        
-                        # 计算 Duration 用于标题显示
-                        started_at = job.get('started_at')
-                        stopped_at = job.get('stopped_at')
-                        duration = format_duration(started_at, stopped_at)
-                        
-                        # 只展开 Preprod 环境的 Jobs
-                        with st.expander(
-                            f"✋ {job.get('name')} - {job.get('status')} - ⏱️ {duration}", 
-                            expanded=is_preprod
-                        ):
-                            col_j1, col_j2 = st.columns([3, 1])
-                            
-                            with col_j1:
+                    st.info("暂无 Workflows 信息")
+
+                # 内嵌审批面板
+                st.markdown("---")
+                st.subheader("✅ 审批面板")
+                pending_approvals = []
+                try:
+                    approval_wfs = get_pipeline_workflows(pipeline_id_input, api_token=CIRCLECI_API_TOKEN, silent=True)
+                    if approval_wfs:
+                        wf_ids = [w.get('id') for w in approval_wfs if w.get('id')]
+                        aj_map = _fetch_workflow_jobs_concurrent(wf_ids)
+                        for wf in approval_wfs:
+                            for job in aj_map.get(wf.get('id'), []):
+                                if job.get('type') == 'approval' and job.get('status') == 'on_hold':
+                                    job['_workflow_id'] = wf.get('id')
+                                    job['_workflow_name'] = wf.get('name')
+                                    pending_approvals.append(job)
+                except Exception:
+                    pass
+
+                if pending_approvals:
+                    st.success(f"🎯 当前 Pipeline 有 {len(pending_approvals)} 个待审批 Jobs")
+                    for job in pending_approvals:
+                        wf_name = job.get('_workflow_name', '')
+                        job_name = job.get('name', '').lower()
+                        dur = format_duration(job.get('started_at'), job.get('stopped_at'))
+                        # preprod 审批项 或 只有一个时自动展开
+                        is_preprod = 'preprod' in job_name
+                        should_expand = is_preprod or len(pending_approvals) == 1
+                        with st.expander(f"✋ {job.get('name')} — {wf_name} — ⏱️ {dur}", expanded=should_expand):
+                            ac1, ac2 = st.columns([3, 1])
+                            with ac1:
                                 st.write(f"**Job ID:** `{job.get('id')}`")
-                                st.write(f"**Job Name:** {job.get('name')}")
-                                st.write(f"**Job Type:** {job.get('type')}")
-                                st.write(f"**状态:** {job.get('status')}")
-                                
-                                # 计算并显示 Duration
-                                started_at = job.get('started_at')
-                                stopped_at = job.get('stopped_at')
-                                duration = format_duration(started_at, stopped_at)
-                                st.write(f"**Duration:** {duration}")
-                                
+                                st.write(f"**Workflow:** {wf_name}")
                                 st.write(f"**Approval Request ID:** `{job.get('approval_request_id')}`")
-                            
-                            with col_j2:
-                                # 使用唯一的 key，结合 workflow_id 和 job id
-                                approve_key = f"approve_{workflow_id}_{job.get('id')}"
-                                if st.button(
-                                    "✅ 审批",
-                                    key=approve_key,
-                                    type="primary",
-                                    use_container_width=True
-                                ):
+                            with ac2:
+                                ak = f"inline_approve_{job.get('id')}"
+                                if st.button("✅ 审批", key=ak, type="primary", use_container_width=True):
                                     with st.spinner("正在审批..."):
-                                        result = approve_job(
-                                            workflow_id,
-                                            job.get('approval_request_id')
-                                        )
-                                        
-                                        if result.get('success'):
+                                        res = approve_job(job.get('_workflow_id'), job.get('approval_request_id'))
+                                        if res.get('success'):
                                             st.success("✅ 审批成功！")
-                                            st.info("💡 请稍等几秒钟后重新查找，查看审批后的状态")
-                                            st.balloons()
-                                            # 清空缓存，让用户重新查询看到最新状态
-                                            time.sleep(2)
-                                            st.session_state.approval_workflows = None
                                             st.rerun()
                                         else:
-                                            st.error(f"❌ 审批失败: {result.get('error')}")
-                    
-                    all_approval_jobs.extend(approval_jobs)
+                                            st.error(f"❌ 审批失败: {res.get('error')}")
                 else:
-                    st.info("ℹ️ 该 Workflow 没有待审批的 Jobs")
+                    st.info("ℹ️ 当前 Pipeline 无待审批 Jobs")
+
             else:
-                st.warning(f"⚠️ 无法获取 Workflow {workflow_name} 的 Jobs")
-            
-            st.markdown("---")
-        
-        if not all_approval_jobs:
-            st.info("ℹ️ 该 Pipeline 没有待审批的 Jobs")
-    
-    st.markdown("---")
-    st.markdown("""
-    ### 📖 审批说明
-    
-    **什么是 Approval Job？**
-    - Approval Job 是 CircleCI 中需要人工确认才能继续执行的步骤
-    - 通常用于部署到生产环境等关键操作前的确认
-    
-    **如何使用审批功能？**
-    1. 输入 Pipeline ID（可以从触发历史或监控页面获取）
-    2. 点击"查找待审批的 Jobs"按钮
-    3. 查看所有处于等待状态（on_hold）的 approval jobs
-    4. 点击"✅ 审批"按钮完成审批
-    5. 审批成功后会自动刷新，可重新查找查看最新状态
-    
-    **注意事项:**
-    - 只有状态为 `on_hold` 的 approval 类型 job 才会显示
-    - 审批后需要等待几秒钟，Pipeline 才会继续执行
-    - 审批成功后，建议重新查找以确认状态变化
-    - 请确保您有权限审批该 Pipeline
-    """)
+                st.error("❌ 无法获取 Pipeline 状态")
+
 
 # 底部信息
 st.markdown("---")
 st.markdown("""
 ### 💡 功能说明
 
-#### 🎯 触发 Pipeline
-1. 输入项目名称（例如：`back-office-cloud`）
-2. 输入分支名称（例如：`master`, `develop`, `SP-12345`）
-3. 系统会自动拼接完整路径：`github/asiainspection/项目名`
-4. 点击"触发 Pipeline"按钮
-5. 等待触发结果
+#### 🎯 触发 Pipeline（Tab1）
+1. 选择项目名称
+2. 输入分支名称，或点击 **"🔍 查最新"** 查询该项目最近构建的分支
+3. 从下拉列表选择分支，自动填入输入框
+4. 点击 **"🚀 触发 Pipeline"** 按钮
+5. 系统自动拼接完整路径：`github/asiainspection/项目名`
+6. 触发成功后可一键跳转 Tab3 监控
 
-#### 📋 Pipeline 列表
-1. 输入项目名称
-2. 可选：输入分支名称（留空查询所有分支）
-3. 点击"查询 Pipelines"查看最近的 Pipeline 列表
-4. 可以查看每个 Pipeline 的详细信息
-5. 点击"查看详情"可以将 Pipeline ID 保存到监控页面
+#### 📋 Pipeline 列表（Tab2）
+1. 选择项目名称，可选填写分支名称（留空查所有分支）
+2. 点击 **"🔍 查询 Pipelines"** 查看最近 10 条 Pipeline 记录
+3. 查看每个 Pipeline 的分支、触发者、提交信息
+4. **分支** 可点击文本框选中后 Ctrl+C 复制
+5. 点击 **"📊 监控"** 按钮，自动跳转 Tab3 并填入 Pipeline ID
 
-#### 📊 监控 Pipeline
-**通过 Pipeline ID 监控：**
-- 输入 Pipeline ID（可以从触发结果或列表中获取）
-- 点击"查看状态"查看当前状态
-- 点击"开始监控"进行实时监控
+#### 📊 监控 Pipeline（Tab3）
+1. 输入 Pipeline ID（或从 Tab1/Tab2 自动带入）
+2. 点击 **"🔍 查看状态"** 获取当前状态
+3. 查看 Workflows / Jobs 统计面板（成功/失败/运行中/待审批）
+4. **Preprod 审批项自动展开**，可直接在页面内完成审批
+5. 无需切换 Tab，审批后自动刷新状态
 
-**通过 Pipeline Number 监控：**
-- 选择"Pipeline Number"监控方式
-- 输入 Pipeline Number（例如：14689）
-- 输入项目名称
-- 点击"开始监控 (通过Number)"
-- 系统会自动查找对应的 Pipeline ID 并开始监控
-
-#### ✅ 审批管理
-1. 输入 Pipeline ID
-2. 点击"查找待审批的 Jobs"
-3. 查看所有需要审批的 Jobs
-4. 点击"✅ 审批"按钮完成审批
-5. 审批后 Pipeline 会自动继续执行
+#### ✅ 审批面板（Tab3 内嵌）
+- 待审批 Jobs 自动展示，Preprod 环境 Jobs 默认展开
+- 填写 Pipeline ID 后自动查找所有 on_hold 状态的 Approval Job
+- 点击 **"✅ 审批"** 按钮直接通过，无需跳转 CircleCI 页面
 
 #### 💡 简化输入说明
 - ✅ **只需输入项目名**: `back-office-cloud`（不是完整路径）
 - ✅ **自动拼接**: 系统自动组合为 `github/asiainspection/back-office-cloud`
 - ✅ **配置预设**: VCS 类型和组织名已在配置中预设
+- ✅ **分支查最新**: 无需记忆分支名，一键查询最近使用过的分支
 
 #### ⚙️ 注意事项
-- 确保在 `users_config.json` 中配置了正确的 API Token
-- 监控会自动刷新，最长监控30分钟
-- 可以在侧边栏查看最近5次触发的历史记录
-- 审批功能需要相应的权限
+- 确保在 `config/users_config.json` 中配置了正确的 API Token
+- Tab2 最多显示 10 条 Pipeline 记录，按最新时间排序
+- Tab3 审批面板仅展示当前 Pipeline 的待审批 Jobs
+- 可以在侧边栏查看最近 5 次触发的历史记录
 """)

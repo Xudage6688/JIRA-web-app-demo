@@ -37,9 +37,8 @@ JIRA_CONFIG = {
     'field_id': user_jira_config.get('field_id', '')
 }
 
-# 初始化配置到 session state
-if 'jira_config' not in st.session_state:
-    st.session_state.jira_config = JIRA_CONFIG.copy()
+# 每次渲染都用最新配置覆盖，确保修改 users_config.json 后立即生效
+st.session_state.jira_config = JIRA_CONFIG.copy()
 
 # 项目映射管理函数
 def load_project_mappings():

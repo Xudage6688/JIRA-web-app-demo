@@ -196,6 +196,27 @@ with col4:
         if st.button("🚀 打开 Jira Operations", key="jira_ops_btn", use_container_width=True, type="primary"):
             st.switch_page("pages/5_📝_Jira_Operations.py")
 
+with col5:
+    with st.container():
+        st.markdown("### 🔧 Jenkins 部署工具 ⭐ NEW")
+        st.markdown("""
+        一键触发 Jenkins 构建，实时监控部署日志。
+        
+        **核心功能：**
+        - 🔁 **顺序部署** - 按顺序逐一部署服务
+        - ⚡ **并发部署** - 所有服务同时触发
+        - 📜 **实时日志** - 逐行展示构建输出
+        - ✅ **结果汇总** - 清晰展示成功/失败
+        
+        **支持服务：**
+        - 🔹 pp-public-api
+        - 🔹 pp-psi-service
+        """)
+
+        st.markdown("")
+        if st.button("🔧 打开 Jenkins 部署", key="jenkins_btn", use_container_width=True, type="primary"):
+            st.switch_page("pages/6_🔧_Jenkins_Deploy.py")
+
 # 功能亮点
 st.markdown("---")
 st.markdown("## ✨ 平台特性")

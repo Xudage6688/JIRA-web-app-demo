@@ -52,3 +52,4 @@ Desktop.ini
 # 临时文件
 *.tmp
 temp/
+config/jira_config.json

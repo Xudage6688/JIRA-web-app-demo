@@ -16,11 +16,18 @@ class SafeLogger:
         self.name = name
     
     def _safe_log(self, level, msg):
-        """安全地记录日志，捕获所有异常"""
+        """安全地记录日志，捕获所有异常，降级写入文件"""
         try:
             print(f"[{level}] {msg}")
-        except:
-            pass  # 静默忽略所有日志错误
+        except Exception:
+            # print 失败时降级写入文件，确保日志不丢失
+            try:
+                log_path = Path(__file__).parent.parent / "logs" / "app.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"[{level}] {msg}\n")
+            except Exception:
+                pass  # 双重降级，最终静默
     
     def info(self, msg):
         self._safe_log("INFO", msg)

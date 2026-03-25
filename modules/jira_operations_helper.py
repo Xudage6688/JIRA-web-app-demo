@@ -7,6 +7,7 @@ import base64
 import requests
 from typing import Dict, Optional, List, Any
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +54,11 @@ FALLBACK_CONFIG = {
     "DEV",
     "PP",
     "PROD"
+  ],
+  "bug_categories": [
+    "Developer Error", "PM Error", "QA Mistake",
+    "Environmental Issue", "False Alarm", "Performance Issue",
+    "UX/UI Problem", "Data Issue", "External system issue"
   ]
 }
 
@@ -385,6 +391,7 @@ class JiraOperationsClient:
     sp_team: Optional[str] = None,
     sp_team_field: Optional[str] = None,
     environment_occured: Optional[str] = None,
+    bug_category: Optional[str] = None,
     sprint_id: Optional[int] = None
   ) -> Dict[str, Any]:
     """
@@ -400,6 +407,7 @@ class JiraOperationsClient:
       sp_team: SP Team 名称
       sp_team_field: SP Team 字段 ID
       environment_occured: 发生环境（Bug 类型必填）
+      bug_category: Bug 分类（customfield_12977）
       sprint_id: Sprint ID
     
     Returns:
@@ -430,6 +438,10 @@ class JiraOperationsClient:
     # 添加 Environment Occured（Bug 类型必填）
     if environment_occured:
       fields["customfield_12602"] = [{"value": environment_occured}]
+    
+    # 添加 Bug Category（customfield_12977）
+    if bug_category:
+      fields["customfield_12977"] = {"value": bug_category}
     
     # 注意：Sprint 不能在创建时设置，需要创建后单独添加
     
@@ -548,96 +560,108 @@ class JiraOperationsClient:
       'issue_key': issue_key
     }
   
-  def get_active_sprints(self, board_id: Optional[int] = None) -> List[Dict[str, Any]]:
+  def get_active_sprints(
+      self,
+      board_ids: Optional[List[int]] = None,
+      team_name: Optional[str] = None,
+  ) -> List[Dict[str, Any]]:
     """
-    获取 Active Sprints - 使用 Jira Agile API
-    
-    Args:
-      board_id: Board ID（可选）
-    
-    Returns:
-      Active Sprint 列表
+    获取 Active Sprints - 使用 Jira Agile API，支持并发加速。
+
+    优化点：
+    1. type=scrum 过滤，减少无关 Board 数量
+    2. 指定 board_ids 时仅查询目标 Board（Team 预过滤）
+    3. 多 Board 并发查询（ThreadPoolExecutor）
     """
     try:
       print(f"[DEBUG] get_active_sprints: 使用 Agile API 获取 Active Sprints")
-      
-      # 获取 Board 列表
-      boards_response = self._call_api('/rest/agile/1.0/board', method='GET', params={'projectKeyOrId': 'SP', 'maxResults': 50})
-      
-      if boards_response and boards_response['success']:
-        boards = boards_response['data'].get('values', [])
-        print(f"[DEBUG] 找到 {len(boards)} 个 Board")
-        
-        all_sprints = {}
-        
-        # 遍历所有 Board 获取 Active Sprints
-        for board in boards:
-          board_id = board.get('id')
-          board_name = board.get('name', '')
-          
-          print(f"[DEBUG] 检查 Board: {board_name} (ID: {board_id})")
-          
-          sprints_response = self._call_api(
-            f'/rest/agile/1.0/board/{board_id}/sprint',
-            method='GET',
-            params={'state': 'active'}
+
+      # 构造 Board 查询参数
+      board_params: Dict[str, Any] = {
+          'projectKeyOrId': 'SP',
+          'maxResults': 50,
+          'type': 'scrum',   # 只查 Scrum Board，排除 Kanban
+      }
+      boards_response = self._call_api(
+          '/rest/agile/1.0/board', method='GET', params=board_params
+      )
+
+      if not (boards_response and boards_response['success']):
+          print(f"[DEBUG] 无法获取 Board 列表")
+          return []
+
+      boards = boards_response['data'].get('values', [])
+      print(f"[DEBUG] 找到 {len(boards)} 个 Scrum Board")
+
+      # Team 预过滤：仅保留 Board 名称包含 team_name 的 Board
+      if team_name and team_name != "（不设置）":
+          boards = [
+              b for b in boards
+              if team_name.lower() in b.get('name', '').lower()
+          ]
+          print(f"[DEBUG] Team '{team_name}' 过滤后剩余 {len(boards)} 个 Board")
+
+      # 指定了 board_ids 时进一步限制
+      if board_ids is not None:
+          boards = [b for b in boards if b.get('id') in board_ids]
+          print(f"[DEBUG] board_ids 过滤后剩余 {len(boards)} 个 Board")
+
+      if not boards:
+          return []
+
+      # 并发查询各 Board 的 Active Sprints
+      all_sprints: Dict[int, Dict[str, Any]] = {}
+
+      def fetch_board_sprints(board: Dict) -> List[Dict]:
+          bid = board.get('id')
+          bname = board.get('name', '')
+          if not bid:
+              return []
+          resp = self._call_api(
+              f'/rest/agile/1.0/board/{bid}/sprint',
+              method='GET',
+              params={'state': 'active'}
           )
-          
-          if sprints_response and sprints_response['success']:
-            sprints = sprints_response['data'].get('values', [])
-            
-            if sprints:
-              print(f"[DEBUG] Board '{board_name}' 有 {len(sprints)} 个 Active Sprint")
-              
-              for sprint in sprints:
-                sprint_id = sprint.get('id')
-                if sprint_id and sprint_id not in all_sprints:
-                  # 添加 Board 信息到 Sprint 对象
-                  sprint['boardName'] = board_name
-                  all_sprints[sprint_id] = sprint
-                  print(f"[DEBUG] 添加 Sprint: {sprint.get('name')} (ID: {sprint_id}, Board: {board_name})")
-        
-        print(f"[DEBUG] 总共找到 {len(all_sprints)} 个 Active Sprint")
-        return list(all_sprints.values())
-      
-      print(f"[DEBUG] 无法获取 Board 列表")
-      return []
-      
+          if not (resp and resp['success']):
+              return []
+          sprints = resp['data'].get('values', [])
+          for sp in sprints:
+              sp['boardName'] = bname
+          return sprints
+
+      with ThreadPoolExecutor(max_workers=10) as executor:
+          futures = {executor.submit(fetch_board_sprints, b): b for b in boards}
+          for future in as_completed(futures):
+              try:
+                  sprints = future.result()
+                  for sp in sprints:
+                      sid = sp.get('id')
+                      if sid and sid not in all_sprints:
+                          all_sprints[sid] = sp
+              except Exception as exc:
+                  board_name = futures[future].get('name', '')
+                  print(f"[WARN] Board '{board_name}' 查询异常: {exc}")
+
+      print(f"[DEBUG] 总共找到 {len(all_sprints)} 个 Active Sprint")
+      return list(all_sprints.values())
+
     except Exception as e:
       print(f"[ERROR] 获取 Sprint 失败: {str(e)}")
       import traceback
       traceback.print_exc()
       return []
-  
+
   def get_sprints_by_team(self, team_name: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    获取指定 Team 的 Active Sprints
-    
+    获取指定 Team 的 Active Sprints。
+
     Args:
-      team_name: Team 名称（如 "Mermaid"）
-    
-    Returns:
-      Sprint 列表，每个包含 id, name, team
+      team_name: Team 名称（如 "Mermaid"），None 则返回全部
     """
     try:
-      sprints = self.get_active_sprints()
-      
+      sprints = self.get_active_sprints(team_name=team_name)
       print(f"[DEBUG] get_sprints_by_team: 获取到 {len(sprints)} 个总 Sprint")
-      
-      if not team_name or team_name == "（不设置）":
-        return sprints
-      
-      # 根据 Team 名称过滤（Sprint 名称通常包含 Team 名称）
-      filtered_sprints = []
-      for sprint in sprints:
-        sprint_name = sprint.get('name', '')
-        print(f"[DEBUG] 检查 Sprint: {sprint_name}, Team: {team_name}")
-        if team_name.lower() in sprint_name.lower():
-          filtered_sprints.append(sprint)
-          print(f"[DEBUG] ✓ 匹配: {sprint_name}")
-      
-      print(f"[DEBUG] 过滤后剩余 {len(filtered_sprints)} 个 Sprint")
-      return filtered_sprints
+      return sprints
     except Exception as e:
       print(f"[ERROR] get_sprints_by_team 失败: {str(e)}")
       import traceback

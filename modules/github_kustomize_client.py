@@ -9,6 +9,7 @@ import base64
 import json
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class GitHubKustomizeClient:
@@ -53,7 +54,10 @@ class GitHubKustomizeClient:
         self.environment = environment
         self.env_config = self.SUPPORTED_ENVIRONMENTS[environment]
         self.github_token = github_token
-        
+
+        # 复用 HTTP Session（连接池复用，TCP 三次握手只一次）
+        self.session = requests.Session()
+
         # 构建请求头
         self.headers = {
             "Accept": "application/vnd.github.v3+json"
@@ -75,7 +79,7 @@ class GitHubKustomizeClient:
         try:
             # 测试API调用
             url = "https://api.github.com/user"
-            response = requests.get(url, headers=self.headers, timeout=10)
+            response = self.session.get(url, headers=self.headers, timeout=10)
             
             if response.status_code == 200:
                 user_data = response.json()
@@ -117,7 +121,7 @@ class GitHubKustomizeClient:
         params = {"ref": self.REPO_BRANCH}
         
         try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=30)
+            response = self.session.get(url, headers=self.headers, params=params, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
@@ -168,7 +172,7 @@ class GitHubKustomizeClient:
             if self.github_token:
                 headers["Authorization"] = f"token {self.github_token}"
             
-            response = requests.get(url, headers=headers, timeout=30)
+            response = self.session.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 return response.text
@@ -251,24 +255,16 @@ class GitHubKustomizeClient:
         # 构建文件路径
         env_path = self.env_config['path']
         file_path = f"{self.BASE_PATH}/{env_path}/{service_name}/kustomization.yml"
-        
-        # 尝试使用 Raw URL（优先，不占用API速率）
-        try:
-            content = self.get_raw_file_content(file_path)
-        except Exception as e:
-            # 如果 Raw URL 失败，尝试使用 API
-            try:
-                content = self.get_file_content(file_path)
-            except Exception as api_error:
-                # 两种方式都失败
-                raise Exception(f"无法获取文件（Raw URL 和 API 均失败）: {str(e)}")
-        
+
+        # 直接使用 Raw URL（不占用 API 速率限制）
+        content = self.get_raw_file_content(file_path)
+
         # 解析 YAML
         kustomization_data = self.parse_kustomization_file(content)
-        
+
         # 提取镜像标签
         image_tag = self.extract_image_tag(kustomization_data, service_name)
-        
+
         return image_tag
     
     def get_service_images(self, service_name: str) -> Dict[str, str]:
@@ -283,49 +279,19 @@ class GitHubKustomizeClient:
         """
         image_tag = self.get_service_image_tag(service_name)
         return {service_name: image_tag}
-    
-    def check_service_exists(self, service_name: str) -> Tuple[bool, str]:
-        """
-        检查服务在 qcore-apps-descriptors 中是否存在
-        
-        Args:
-            service_name: 服务名称
-            
-        Returns:
-            (exists, message): 是否存在和消息
-        """
-        env_path = self.env_config['path']
-        file_path = f"{self.BASE_PATH}/{env_path}/{service_name}/kustomization.yml"
-        
-        try:
-            # 只检查文件是否存在，不获取内容（使用HEAD请求更快）
-            url = f"https://api.github.com/repos/{self.REPO_OWNER}/{self.REPO_NAME}/contents/{file_path}"
-            params = {"ref": self.REPO_BRANCH}
-            
-            response = requests.head(url, headers=self.headers, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                return True, f"服务 {service_name} 存在于仓库中"
-            elif response.status_code == 404:
-                return False, f"服务 {service_name} 不存在于仓库中"
-            else:
-                return False, f"检查失败: {response.status_code}"
-                
-        except Exception as e:
-            return False, f"检查异常: {str(e)}"
-    
+
     def query_multiple_services(self, service_names: List[str]) -> Dict[str, any]:
         """
-        批量查询多个服务的镜像信息
-        
+        批量查询多个服务的镜像信息（并发）
+
         Args:
             service_names: 服务名称列表
-            
+
         Returns:
             {
                 'success': {service_name: image_tag, ...},
                 'failed': {service_name: error_message, ...},
-                'warnings': [warning_message, ...]  # 服务名称不一致的警告
+                'warnings': [warning_message, ...]
             }
         """
         results = {
@@ -333,21 +299,27 @@ class GitHubKustomizeClient:
             'failed': {},
             'warnings': []
         }
-        
-        for service_name in service_names:
+
+        def fetch_one(svc: str) -> Tuple[str, Optional[Dict[str, str]], Optional[str]]:
             try:
-                images = self.get_service_images(service_name)
-                results['success'].update(images)
+                return svc, self.get_service_images(svc), None
             except Exception as e:
-                error_msg = str(e)
-                results['failed'][service_name] = error_msg
-                
-                # 如果是文件不存在错误，添加警告
-                if "文件不存在" in error_msg or "404" in error_msg:
-                    results['warnings'].append(
-                        f"⚠️ 服务 '{service_name}' 在 {self.env_config['display_name']} 环境的 qcore-apps-descriptors 仓库中不存在，请检查服务名称是否正确"
-                    )
-        
+                return svc, None, str(e)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(fetch_one, svc): svc for svc in service_names}
+            for future in as_completed(futures):
+                svc, images, err = future.result()
+                if err:
+                    results['failed'][svc] = err
+                    if "文件不存在" in err or "404" in err:
+                        results['warnings'].append(
+                            f"⚠️ 服务 '{svc}' 在 {self.env_config['display_name']} "
+                            f"环境的 qcore-apps-descriptors 仓库中不存在，请检查服务名称是否正确"
+                        )
+                else:
+                    results['success'].update(images)
+
         return results
     
     @staticmethod

@@ -6,7 +6,6 @@ Jira Operations Tool
 import streamlit as st
 import sys
 import os
-import base64
 from pathlib import Path
 from typing import Dict, Optional, List
 
@@ -19,7 +18,8 @@ if 'modules.jira_operations_helper' in sys.modules:
   importlib.reload(sys.modules['modules.jira_operations_helper'])
 
 from modules.jira_operations_helper import JiraOperationsClient, FALLBACK_CONFIG
-from modules.user_config_loader import get_jira_config, get_user_config_loader
+from modules.user_config_loader import get_jira_config, get_user_config_loader, build_jira_auth_headers
+from modules.test_case_importer import render_test_case_importer_tab
 
 # 尝试导入 cookies manager
 try:
@@ -127,26 +127,20 @@ with st.sidebar:
   st.header("📋 选择操作")
   operation = st.radio(
     "功能",
-    options=["创建 Ticket", "查询 Ticket", "批量更新 Resolution", "删除 Ticket"],
+    options=["创建 Ticket", "查询 Ticket", "批量更新 Resolution", "删除 Ticket", "导入 Test Cases"],
     key="operation_selector"
   )
   
   st.markdown("---")
   
   # 连接测试
-  with st.expander("🔧 连接测试（调试用）"):
+  with st.expander("🔧 JIRA 连接测试（调试用）"):
     if st.button("测试 Jira API 连接"):
       with st.spinner("测试中..."):
         try:
           import requests
           test_url = f"{base_url}/rest/api/3/myself"
-          auth_str = f"{config_email}:{api_token}"
-          auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
-          
-          headers = {
-            'Authorization': f'Basic {auth_b64}',
-            'Content-Type': 'application/json'
-          }
+          headers = build_jira_auth_headers(config_email, api_token)
           
           response = requests.get(test_url, headers=headers, timeout=10)
           
@@ -173,14 +167,8 @@ with st.sidebar:
         try:
           import requests
           test_url = f"{base_url}/rest/api/3/issue/createmeta"
-          auth_str = f"{config_email}:{api_token}"
-          auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
-          
-          headers = {
-            'Authorization': f'Basic {auth_b64}',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
+          headers = build_jira_auth_headers(config_email, api_token)
+          headers['Accept'] = 'application/json'
           
           params = {
             'projectKeys': 'SP',
@@ -248,14 +236,8 @@ with st.sidebar:
         try:
           import requests
           test_url = f"{base_url}/rest/api/3/issue/createmeta"
-          auth_str = f"{config_email}:{api_token}"
-          auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
-          
-          headers = {
-            'Authorization': f'Basic {auth_b64}',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
+          headers = build_jira_auth_headers(config_email, api_token)
+          headers['Accept'] = 'application/json'
           
           params = {
             'projectKeys': 'SP',
@@ -332,14 +314,8 @@ with st.sidebar:
           import requests
           import json
           
-          auth_str = f"{config_email}:{api_token}"
-          auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
-          
-          headers = {
-            'Authorization': f'Basic {auth_b64}',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
+          headers = build_jira_auth_headers(config_email, api_token)
+          headers['Accept'] = 'application/json'
           
           st.info(f"📋 使用 Jira Agile API 获取 Sprints")
           
@@ -425,14 +401,8 @@ with st.sidebar:
           try:
             import requests
             test_url = f"{base_url}/rest/api/3/issue/{test_ticket}"
-            auth_str = f"{config_email}:{api_token}"
-            auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
-            
-            headers = {
-              'Authorization': f'Basic {auth_b64}',
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
+            headers = build_jira_auth_headers(config_email, api_token)
+            headers['Accept'] = 'application/json'
             
             params = {
               'fields': 'summary,description,status,priority,reporter,resolution,project,assignee,created,updated,issuetype,customfield_12628'
@@ -456,6 +426,108 @@ with st.sidebar:
             st.error(f"❌ 测试失败: {str(e)}")
             import traceback
             st.code(traceback.format_exc())
+
+  st.markdown("---")
+
+  # Xray 连接调试
+  with st.expander("🧪 Xray 连接调试（调试用）"):
+    # 加载 Xray 配置
+    user_config_loader = get_user_config_loader()
+    user_full_config = user_config_loader.get_user_config(current_user) if hasattr(user_config_loader, 'get_user_config') else {}
+    xray_config_default = user_full_config.get('xray', {}) if user_full_config else {}
+
+    saved_xray_id = xray_config_default.get('client_id', '')
+    saved_xray_secret = xray_config_default.get('client_secret', '')
+
+    xray_client_id_input = st.text_input(
+      "Xray Client ID",
+      value=saved_xray_id,
+      type="password",
+      key="xray_debug_client_id"
+    )
+    xray_client_secret_input = st.text_input(
+      "Xray Client Secret",
+      value=saved_xray_secret,
+      type="password",
+      key="xray_debug_client_secret"
+    )
+
+    if st.button("🔑 获取 Xray Token", key="xray_get_token_btn"):
+      if xray_client_id_input and xray_client_secret_input:
+        with st.spinner("获取中..."):
+          try:
+            import requests as _req
+            auth_resp = _req.post(
+              "https://xray.cloud.getxray.app/api/v2/authenticate",
+              json={"client_id": xray_client_id_input, "client_secret": xray_client_secret_input},
+              timeout=15
+            )
+            if auth_resp.status_code == 200:
+              xray_token = auth_resp.text.strip().strip('"')
+              st.session_state['xray_debug_token'] = xray_token
+              st.success(f"✅ Token 获取成功！前 30 字符: {xray_token[:30]}...")
+              st.info("⏰ Token 有效期：24 小时")
+            else:
+              st.error(f"❌ 获取失败 (状态码: {auth_resp.status_code})")
+              st.code(auth_resp.text[:500])
+          except Exception as e:
+            st.error(f"❌ 请求失败: {str(e)}")
+      else:
+        st.warning("⚠️ 请填写 Client ID 和 Client Secret")
+
+    if st.button("🔍 验证 Token 有效性", key="xray_verify_btn"):
+      token_to_check = st.session_state.get('xray_debug_token', '')
+      if token_to_check:
+        with st.spinner("验证中..."):
+          try:
+            import requests as _req
+            # 用 GraphQL 的轻量查询验证 token
+            verify_resp = _req.post(
+              "https://xray.cloud.getxray.app/api/v2/graphql",
+              headers={
+                "Authorization": f"Bearer {token_to_check}",
+                "Content-Type": "application/json"
+              },
+              json={"query": "{ getProjectSettings(projectIdOrKey: \"SP\") { projectId } }"},
+              timeout=15
+            )
+            st.info(f"📊 响应状态码: {verify_resp.status_code}")
+            if verify_resp.status_code == 200:
+              data = verify_resp.json()
+              if data.get("errors"):
+                st.warning(f"⚠️ Token 有效，但查询返回错误: {data['errors']}")
+              else:
+                st.success("✅ Token 有效！")
+                st.json(data.get("data", {}))
+            elif verify_resp.status_code == 401:
+              st.error("❌ Token 已过期或无效，请重新获取")
+            else:
+              st.error(f"❌ 验证失败 (状态码: {verify_resp.status_code})")
+              st.code(verify_resp.text[:500])
+          except Exception as e:
+            st.error(f"❌ 请求失败: {str(e)}")
+      else:
+        st.warning("⚠️ 请先获取 Token")
+
+    if st.button("🏷️ 查询 SP 项目 Issue Link 类型", key="xray_link_types_btn"):
+      with st.spinner("查询中..."):
+        try:
+          import requests as _req
+          lt_resp = _req.get(
+            f"{base_url}/rest/api/3/issueLinkType",
+            headers=build_jira_auth_headers(config_email, api_token),
+            timeout=10
+          )
+          if lt_resp.status_code == 200:
+            link_types = lt_resp.json().get('issueLinkTypes', [])
+            st.success(f"✅ 找到 {len(link_types)} 种 Link 类型")
+            for lt in link_types:
+              st.write(f"**{lt.get('name')}** — inward: `{lt.get('inward')}` / outward: `{lt.get('outward')}`")
+          else:
+            st.error(f"❌ 查询失败 (状态码: {lt_resp.status_code})")
+            st.code(lt_resp.text[:500])
+        except Exception as e:
+          st.error(f"❌ 请求失败: {str(e)}")
 
 # 验证 Token
 if not api_token or api_token in ['YOUR_JIRA_TOKEN_HERE', 'your_api_token_here', '']:
@@ -525,10 +597,10 @@ if 'create_work_type_idx' not in st.session_state:
     st.session_state.create_work_type_idx = default_work_types.index("Test Execution")
   else:
     st.session_state.create_work_type_idx = 3  # fallback to Task
-if 'create_summary' not in st.session_state:
-  st.session_state.create_summary = ""
-if 'create_description' not in st.session_state:
-  st.session_state.create_description = ""
+if 'create_summary_cache' not in st.session_state:
+  st.session_state.create_summary_cache = ""
+if 'create_description_cache' not in st.session_state:
+  st.session_state.create_description_cache = ""
 if 'create_priority_idx' not in st.session_state:
   st.session_state.create_priority_idx = 4  # Medium
 if 'create_sp_team_idx' not in st.session_state:
@@ -555,6 +627,12 @@ if 'delete_confirm' not in st.session_state:
   st.session_state.delete_confirm = False
 if 'available_sprints' not in st.session_state:
   st.session_state.available_sprints = []
+if 'import_related_ticket' not in st.session_state:
+  st.session_state.import_related_ticket = ""
+if 'import_results' not in st.session_state:
+  st.session_state.import_results = None
+if 'manual_cases' not in st.session_state:
+  st.session_state.manual_cases = [{"Action": "", "Data": "", "Expected Result": ""}]
 
 # 根据选择的操作显示不同界面
 if operation == "创建 Ticket":
@@ -693,38 +771,59 @@ if operation == "创建 Ticket":
       st.session_state.create_environment_idx = environment_options.index(environment_occured)
     
     with bug_env_col2:
-      st.markdown("<br>", unsafe_allow_html=True)
-      st.info("💡 Bug 类型必须选择环境")
+      bug_category_options = FALLBACK_CONFIG.get("bug_categories", [
+        "Developer Error", "PM Error", "QA Mistake",
+        "Environmental Issue", "False Alarm", "Performance Issue",
+        "UX/UI Problem", "Data Issue", "External system issue"
+      ])
+      default_cat_idx = bug_category_options.index("Developer Error") if "Developer Error" in bug_category_options else 0
+      bug_category = st.selectbox(
+        "Bug Category",
+        options=bug_category_options,
+        index=default_cat_idx,
+        help="Bug 分类（customfield_12977）",
+        key="bug_category_select"
+      )
   else:
     environment_occured = None
+    bug_category = None
   
   st.markdown("---")
   
   # ========== 创建 Ticket 表单 ==========
+  st.subheader("📝 填写详细信息")
+
+  # 切换页面后 widget key 被清除，从 cache 恢复
+  if 'create_summary_input' not in st.session_state:
+    st.session_state.create_summary_input = st.session_state.create_summary_cache
+  if 'create_description_input' not in st.session_state:
+    st.session_state.create_description_input = st.session_state.create_description_cache
+
+  st.text_input(
+    "Summary *",
+    placeholder="简短描述问题或任务",
+    help="Issue 标题（必填）",
+    key="create_summary_input"
+  )
+
+  st.text_area(
+    "Description",
+    height=200,
+    placeholder="详细描述...",
+    help="Issue 描述（支持多行文本）",
+    key="create_description_input"
+  )
+
+  # 渲染后实时同步到 cache，供切换页面后恢复使用
+  st.session_state.create_summary_cache = st.session_state.create_summary_input
+  st.session_state.create_description_cache = st.session_state.create_description_input
+
   with st.form("create_ticket_form"):
-    st.subheader("📝 填写详细信息")
-    
-    summary = st.text_input(
-      "Summary *",
-      value=st.session_state.create_summary,
-      placeholder="简短描述问题或任务",
-      help="Issue 标题（必填）"
-    )
-    
-    description = st.text_area(
-      "Description",
-      value=st.session_state.create_description,
-      height=200,
-      placeholder="详细描述...",
-      help="Issue 描述（支持多行文本）"
-    )
-    
     submitted = st.form_submit_button("🚀 创建 Ticket", type="primary", use_container_width=True)
     
     if submitted:
-      # 保存输入内容到 session_state
-      st.session_state.create_summary = summary
-      st.session_state.create_description = description
+      summary = st.session_state.create_summary_input
+      description = st.session_state.create_description_input
       
       # 验证必填字段
       if not summary or not summary.strip():
@@ -763,6 +862,7 @@ if operation == "创建 Ticket":
               sp_team=selected_team,
               sp_team_field=sp_team_field,
               environment_occured=environment_occured if work_type == "Bug" else None,
+              bug_category=bug_category if work_type == "Bug" else None,
               sprint_id=selected_sprint_id
             )
             
@@ -775,6 +875,10 @@ if operation == "创建 Ticket":
               
               st.success(f"✅ Ticket 创建成功！")
               st.markdown(f"**Issue Key**: [{issue_key}]({browse_url})")
+              
+              # key 单独展示，st.code 的复制按钮只复制纯值（无引号）
+              st.code(issue_key, language=None)
+              
               st.json(issue_data)
             else:
               # 创建失败
@@ -1186,6 +1290,15 @@ elif operation == "删除 Ticket":
         st.session_state.delete_confirm = False
         st.info("已取消删除操作")
         st.rerun()
+
+elif operation == "导入 Test Cases":
+  render_test_case_importer_tab(
+    current_user=current_user,
+    base_url=base_url,
+    config_email=config_email,
+    api_token=api_token,
+    metadata=metadata,
+  )
 
 # 页脚
 st.markdown("---")
