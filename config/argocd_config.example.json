@@ -1,0 +1,13 @@
+{
+  "environment": "preprod",
+  "services": [
+    "demo-service-a",
+    "demo-service-b",
+    "demo-service-c",
+    "demo-api-service"
+  ],
+  "service_mappings": {
+    "demo-service-a": "demo-service-a-cn",
+    "demo-public-api": "demo-public-api-job"
+  }
+}

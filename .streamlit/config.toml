@@ -1,0 +1,11 @@
+[server]
+port = 9999
+address = "127.0.0.1"
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+serverAddress = "127.0.0.1"
+gatherUsageStats = false
+serverPort = 9999

@@ -1,0 +1,10 @@
+{
+  "project_mappings": {
+    "new-project": [
+      "related-project"
+    ]
+  },
+  "description": "当检测到左侧项目时，自动添加右侧的关联项目到结果中。支持大小写变体和不同命名格式。",
+  "version": "1.1.0",
+  "last_updated": "2026-05-16"
+}
