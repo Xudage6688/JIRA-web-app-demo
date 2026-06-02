@@ -6,7 +6,8 @@ from typing import List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import logging
-from modules.user_config_loader import build_circleci_headers
+
+from modules.user_config_loader import build_circleci_headers, parse_api_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +16,24 @@ CIRCLECI_API_BASE = 'https://circleci.com/api/v2'
 
 # 超时常量
 DEFAULT_TIMEOUT_SECONDS = 30
-QUICK_TIMEOUT_SECONDS = 10
+QUICK_TIMEOUT_SECONDS = 15
 
-# 使用统一的 headers 构建函数（已从 modules.user_config_loader 导入）
+# 模块级 Session 用于连接池复用
+_session = requests.Session()
 
-def _parse_error_message(response: requests.Response) -> str:
-    """解析 API 错误消息"""
-    try:
-        error_data = response.json()
-        return error_data.get('message', response.text[:200])
-    except (requests.exceptions.JSONDecodeError, ValueError):
-        return response.text[:200] if response.text else f"HTTP {response.status_code}"
+
+def _handle_request_error(operation: str, e: Exception, context: Dict) -> Dict:
+    """统一的请求错误处理"""
+    if isinstance(e, requests.exceptions.Timeout):
+        logger.error(f"Timeout {operation}")
+        return {**context, 'success': False, 'error': '请求超时', 'status_code': None}
+    elif isinstance(e, requests.exceptions.ConnectionError):
+        logger.error(f"Connection error {operation}: {e}")
+        return {**context, 'success': False, 'error': '网络连接错误', 'status_code': None}
+    elif isinstance(e, requests.exceptions.RequestException):
+        logger.error(f"Request error {operation}: {e}")
+        return {**context, 'success': False, 'error': f'请求错误: {str(e)}', 'status_code': None}
+    return {**context, 'success': False, 'error': str(e)}
 
 
 def _trigger_single_service(
@@ -54,7 +62,7 @@ def _trigger_single_service(
     data = {"branch": branch}
 
     try:
-        response = requests.post(url, json=data, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
+        response = _session.post(url, json=data, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
 
         if response.status_code == 201:
             result = response.json()
@@ -66,7 +74,7 @@ def _trigger_single_service(
                 'project_slug': project_slug
             }
         else:
-            error_msg = _parse_error_message(response)
+            error_msg = parse_api_error_message(response)
             logger.warning(f"Failed to trigger {service}: {error_msg}")
             return {
                 'success': False,
@@ -75,15 +83,8 @@ def _trigger_single_service(
                 'status_code': response.status_code
             }
 
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout triggering {service}")
-        return {'success': False, 'service': service, 'error': '请求超时', 'status_code': None}
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"Connection error for {service}: {e}")
-        return {'success': False, 'service': service, 'error': '网络连接错误', 'status_code': None}
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error for {service}: {e}")
-        return {'success': False, 'service': service, 'error': f'请求错误: {str(e)}', 'status_code': None}
+        return _handle_request_error(f"triggering {service}", e, {'service': service})
 
 
 def _fetch_pending_for_pipeline(
@@ -104,10 +105,11 @@ def _fetch_pending_for_pipeline(
     """
     pending_jobs = []
     headers = build_circleci_headers(api_token)
+    target_env_lower = target_env.lower()
 
     try:
         pipeline_url = f"{CIRCLECI_API_BASE}/pipeline/{pipeline_id}"
-        pipeline_resp = requests.get(pipeline_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
+        pipeline_resp = _session.get(pipeline_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
 
         if pipeline_resp.status_code != 200:
             return []
@@ -118,7 +120,7 @@ def _fetch_pending_for_pipeline(
         service_name = project_slug.split('/')[-1] if project_slug else 'Unknown'
 
         workflows_url = f"{CIRCLECI_API_BASE}/pipeline/{pipeline_id}/workflow"
-        workflows_resp = requests.get(workflows_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
+        workflows_resp = _session.get(workflows_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
 
         if workflows_resp.status_code != 200:
             return []
@@ -130,7 +132,7 @@ def _fetch_pending_for_pipeline(
             workflow_name = workflow.get('name', 'Unknown')
 
             jobs_url = f"{CIRCLECI_API_BASE}/workflow/{workflow_id}/job"
-            jobs_resp = requests.get(jobs_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
+            jobs_resp = _session.get(jobs_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
 
             if jobs_resp.status_code != 200:
                 continue
@@ -142,19 +144,25 @@ def _fetch_pending_for_pipeline(
                 job_status = job.get('status')
                 job_name = job.get('name', '').lower()
 
-                if job_type == 'approval' and job_status == 'on_hold':
-                    if target_env.lower() in job_name:
-                        pending_jobs.append({
-                            'pipeline_id': pipeline_id,
-                            'pipeline_number': pipeline_number,
-                            'workflow_id': workflow_id,
-                            'workflow_name': workflow_name,
-                            'job_id': job.get('id'),
-                            'job_name': job.get('name'),
-                            'approval_request_id': job.get('approval_request_id'),
-                            'environment': target_env,
-                            'service_name': service_name
-                        })
+                # 组合条件扁平化嵌套判断
+                is_approval_on_hold = (
+                    job_type == 'approval' and
+                    job_status == 'on_hold' and
+                    target_env_lower in job_name
+                )
+
+                if is_approval_on_hold:
+                    pending_jobs.append({
+                        'pipeline_id': pipeline_id,
+                        'pipeline_number': pipeline_number,
+                        'workflow_id': workflow_id,
+                        'workflow_name': workflow_name,
+                        'job_id': job.get('id'),
+                        'job_name': job.get('name'),
+                        'approval_request_id': job.get('approval_request_id'),
+                        'environment': target_env,
+                        'service_name': service_name
+                    })
 
     except requests.exceptions.Timeout:
         logger.warning(f"Timeout fetching pending approvals for {pipeline_id}")
@@ -166,7 +174,10 @@ def _fetch_pending_for_pipeline(
     return pending_jobs
 
 
-def _approve_single_job(approval: Dict, api_token: str) -> Dict:
+def _approve_single_job(
+    approval: Dict,
+    api_token: str
+) -> Dict:
     """
     审批单个 job
 
@@ -185,48 +196,30 @@ def _approve_single_job(approval: Dict, api_token: str) -> Dict:
 
     url = f"{CIRCLECI_API_BASE}/workflow/{workflow_id}/approve/{approval_request_id}"
     headers = build_circleci_headers(api_token)
+    context = {
+        'service': service_name,
+        'pipeline_number': pipeline_number,
+        'job_name': job_name
+    }
 
     try:
-        response = requests.post(url, json={}, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
+        response = _session.post(url, json={}, headers=headers, timeout=DEFAULT_TIMEOUT_SECONDS)
 
         if response.status_code < 400:
             logger.info(f"Approved {service_name} #{pipeline_number} - {job_name}")
-            return {
-                'success': True,
-                'service': service_name,
-                'pipeline_number': pipeline_number,
-                'job_name': job_name
-            }
+            return {**context, 'success': True}
         else:
-            error_msg = _parse_error_message(response)
+            error_msg = parse_api_error_message(response)
             logger.warning(f"Failed to approve {service_name}: {error_msg}")
             return {
+                **context,
                 'success': False,
-                'service': service_name,
-                'pipeline_number': pipeline_number,
-                'job_name': job_name,
                 'error': error_msg,
                 'status_code': response.status_code
             }
 
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout approving {service_name}")
-        return {
-            'success': False,
-            'service': service_name,
-            'pipeline_number': pipeline_number,
-            'job_name': job_name,
-            'error': '请求超时'
-        }
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error approving {service_name}: {e}")
-        return {
-            'success': False,
-            'service': service_name,
-            'pipeline_number': pipeline_number,
-            'job_name': job_name,
-            'error': str(e)
-        }
+        return _handle_request_error(f"approving {service_name}", e, context)
 
 
 def batch_trigger_pipelines(
@@ -250,13 +243,17 @@ def batch_trigger_pipelines(
 
     Returns:
         (成功列表, 失败列表)
+        成功项: {'service': str, 'pipeline_id': str, 'pipeline_number': int, 'project_slug': str}
+        失败项: {'service': str, 'error': str, 'status_code': Optional[int]}
     """
     success_list = []
     failed_list = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_trigger_single_service, svc, branch, vcs_type, organization, api_token): svc
+            executor.submit(
+                _trigger_single_service, svc, branch, vcs_type, organization, api_token
+            ): svc
             for svc in services
         }
 
@@ -286,7 +283,18 @@ def get_pending_approvals_for_batch(
         max_workers: 并发数
 
     Returns:
-        待审批列表
+        待审批列表，每项包含:
+        {
+            'pipeline_id': str,
+            'pipeline_number': int,
+            'workflow_id': str,
+            'workflow_name': str,
+            'job_id': str,
+            'job_name': str,
+            'approval_request_id': str,
+            'environment': str,
+            'service_name': str
+        }
     """
     all_pending = []
 
@@ -315,12 +323,14 @@ def batch_approve_jobs(
     批量审批多个 Job
 
     Args:
-        pending_approvals: 待审批列表
+        pending_approvals: 待审批列表（来自 get_pending_approvals_for_batch）
         api_token: CircleCI API Token
-        max_workers: 并发数
+        max_workers: 并发数（默认 5，避免 API 限流）
 
     Returns:
         (成功列表, 失败列表)
+        成功项: {'service': str, 'pipeline_number': int, 'job_name': str}
+        失败项: {'service': str, 'pipeline_number': int, 'job_name': str, 'error': str}
     """
     success_list = []
     failed_list = []
@@ -355,13 +365,19 @@ def check_pipeline_approval_status(
         target_env: 目标环境
 
     Returns:
-        状态字典
+        {
+            'has_approval': bool,
+            'status': str,  # 'pending', 'approved', 'not_found', 'error'
+            'job_name': Optional[str],
+            'approved_by': Optional[str],
+            'approved_at': Optional[str]
+        }
     """
     headers = build_circleci_headers(api_token)
 
     try:
         workflows_url = f"{CIRCLECI_API_BASE}/pipeline/{pipeline_id}/workflow"
-        workflows_resp = requests.get(workflows_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
+        workflows_resp = _session.get(workflows_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
 
         if workflows_resp.status_code != 200:
             return {'has_approval': False, 'status': 'error', 'error': 'Failed to get workflows'}
@@ -371,7 +387,7 @@ def check_pipeline_approval_status(
         for workflow in workflows:
             workflow_id = workflow.get('id')
             jobs_url = f"{CIRCLECI_API_BASE}/workflow/{workflow_id}/job"
-            jobs_resp = requests.get(jobs_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
+            jobs_resp = _session.get(jobs_url, headers=headers, timeout=QUICK_TIMEOUT_SECONDS)
 
             if jobs_resp.status_code != 200:
                 continue
@@ -383,21 +399,28 @@ def check_pipeline_approval_status(
                 job_name = job.get('name', '').lower()
                 job_status = job.get('status')
 
-                if job_type == 'approval' and target_env.lower() in job_name:
-                    if job_status == 'on_hold':
-                        return {
-                            'has_approval': True,
-                            'status': 'pending',
-                            'job_name': job.get('name')
-                        }
-                    elif job_status == 'success':
-                        return {
-                            'has_approval': True,
-                            'status': 'approved',
-                            'job_name': job.get('name'),
-                            'approved_by': job.get('approved_by'),
-                            'approved_at': job.get('stopped_at')
-                        }
+                is_target_approval = (
+                    job_type == 'approval' and
+                    target_env.lower() in job_name
+                )
+
+                if not is_target_approval:
+                    continue
+
+                if job_status == 'on_hold':
+                    return {
+                        'has_approval': True,
+                        'status': 'pending',
+                        'job_name': job.get('name')
+                    }
+                elif job_status == 'success':
+                    return {
+                        'has_approval': True,
+                        'status': 'approved',
+                        'job_name': job.get('name'),
+                        'approved_by': job.get('approved_by'),
+                        'approved_at': job.get('stopped_at')
+                    }
 
         return {'has_approval': False, 'status': 'not_found'}
 
