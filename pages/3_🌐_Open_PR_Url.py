@@ -1,4 +1,4 @@
-﻿# PR URL批量访问工具
+# PR URL批量访问工具
 import streamlit as st
 
 st.set_page_config(page_title="PR URL批量访问工具", layout="wide")

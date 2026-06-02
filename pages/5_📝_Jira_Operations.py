@@ -1,4 +1,4 @@
-﻿"""
+"""
 Jira Operations Tool
 支持创建、查询和批量更新 Jira Tickets
 """
@@ -20,6 +20,7 @@ if 'modules.jira_operations_helper' in sys.modules:
 from modules.jira_operations_helper import JiraOperationsClient, FALLBACK_CONFIG
 from modules.user_config_loader import get_jira_config, get_user_config_loader, build_jira_auth_headers
 from modules.test_case_importer import render_test_case_importer_tab
+
 
 # 尝试导入 cookies manager
 try:
@@ -52,7 +53,7 @@ if not user_jira_config:
   st.stop()
 
 # 配置信息
-base_url = user_jira_config.get('base_url', 'https://demo.atlassian.net')
+base_url = user_jira_config.get('base_url', 'https://qima.atlassian.net')
 config_email = get_user_config_loader().get_user_email(current_user)
 config_token = user_jira_config.get('api_token', '')
 display_name = get_user_config_loader().get_user_display_name(current_user)
@@ -60,12 +61,14 @@ display_name = get_user_config_loader().get_user_display_name(current_user)
 # 初始化 cookies manager
 cookies = None
 if COOKIES_AVAILABLE:
+  # 使用用户名的确定性哈希作为 cookie 加密密码
+  # 不需要用户单独配置，满足安全存储需求
   cookies = EncryptedCookieManager(
     prefix=f"jira_ops_{current_user}_",
-    password=os.environ.get("COOKIES_PASSWORD")
+    password=f"jira-ops-{current_user}-cookie-key"
   )
-  # 如果环境变量未设置，cookies.ready() 会返回 False
-  # 用户需要设置 COOKIES_PASSWORD 环境变量来启用持久化功能
+  if not cookies.ready():
+    st.stop()
 
 # 页面标题
 st.title("📝 Jira Operations Tool")
@@ -171,7 +174,7 @@ with st.sidebar:
           headers['Accept'] = 'application/json'
           
           params = {
-            'projectKeys': 'DEMO',
+            'projectKeys': 'SP',
             'expand': 'projects.issuetypes.fields'
           }
           
@@ -240,7 +243,7 @@ with st.sidebar:
           headers['Accept'] = 'application/json'
           
           params = {
-            'projectKeys': 'DEMO',
+            'projectKeys': 'SP',
             'issuetypeNames': 'Bug',
             'expand': 'projects.issuetypes.fields'
           }
@@ -257,10 +260,10 @@ with st.sidebar:
               
               st.success("✅ Bug 类型的字段信息")
               
-              # 查找 customfield_10003
-              if 'customfield_10003' in fields:
-                field_info = fields['customfield_10003']
-                st.info(f"**Environment Occured (customfield_10003)**")
+              # 查找 customfield_12602
+              if 'customfield_12602' in fields:
+                field_info = fields['customfield_12602']
+                st.info(f"**Environment Occured (customfield_12602)**")
                 st.write(f"- 是否必填: {field_info.get('required', False)}")
                 st.write(f"- 字段名: {field_info.get('name')}")
                 st.write(f"- 类型: {field_info.get('schema', {}).get('type')}")
@@ -321,7 +324,7 @@ with st.sidebar:
           
           # 步骤1: 获取 Board 列表
           boards_url = f"{base_url}/rest/agile/1.0/board"
-          boards_params = {'projectKeyOrId': 'DEMO', 'maxResults': 50}
+          boards_params = {'projectKeyOrId': 'SP', 'maxResults': 50}
           
           st.write("**步骤 1: 获取 Board 列表**")
           boards_response = requests.get(boards_url, headers=headers, params=boards_params, timeout=30)
@@ -395,7 +398,7 @@ with st.sidebar:
     st.markdown("---")
     
     if st.button("测试查询 Issue API"):
-      test_ticket = st.text_input("测试 Ticket", value="DEMO-30648", key="debug_ticket")
+      test_ticket = st.text_input("测试 Ticket", value="SP-30648", key="debug_ticket")
       if test_ticket:
         with st.spinner("测试查询 API..."):
           try:
@@ -405,7 +408,7 @@ with st.sidebar:
             headers['Accept'] = 'application/json'
             
             params = {
-              'fields': 'summary,description,status,priority,reporter,resolution,project,assignee,created,updated,issuetype,customfield_10002'
+              'fields': 'summary,description,status,priority,reporter,resolution,project,assignee,created,updated,issuetype,customfield_12628'
             }
             
             st.info(f"📡 请求 URL: {test_url}")
@@ -553,7 +556,7 @@ except Exception as e:
 
 # 获取元数据（缓存，但可以通过 TTL 刷新）
 @st.cache_data(ttl=300)  # 5分钟缓存
-def get_metadata(_client: JiraOperationsClient, project_key: str = "DEMO") -> Dict:
+def get_metadata(_client: JiraOperationsClient, project_key: str = "SP") -> Dict:
   """获取创建 Issue 的元数据"""
   return _client.get_create_metadata(project_key)
 
@@ -572,7 +575,7 @@ with col2:
     st.sidebar.success("✅ Sprint 缓存已清除")
     st.rerun()
 
-metadata = get_metadata(jira_client, "DEMO")
+metadata = get_metadata(jira_client, "SP")
 
 # 显示是否使用 fallback
 if metadata.get('using_fallback'):
@@ -604,11 +607,11 @@ if 'create_description_cache' not in st.session_state:
 if 'create_priority_idx' not in st.session_state:
   st.session_state.create_priority_idx = 4  # Medium
 if 'create_sp_team_idx' not in st.session_state:
-  # 默认设置为 Demo Team
+  # 默认设置为 Mermaid
   sp_teams_list = metadata.get('sp_teams', [])
   sp_team_options = ["（不设置）"] + sp_teams_list
-  if "Demo Team" in sp_team_options:
-    st.session_state.create_sp_team_idx = sp_team_options.index("Demo Team")
+  if "Mermaid" in sp_team_options:
+    st.session_state.create_sp_team_idx = sp_team_options.index("Mermaid")
   else:
     st.session_state.create_sp_team_idx = 0
 if 'create_environment_idx' not in st.session_state:
@@ -781,7 +784,7 @@ if operation == "创建 Ticket":
         "Bug Category",
         options=bug_category_options,
         index=default_cat_idx,
-        help="Bug 分类（customfield_10004）",
+        help="Bug 分类（customfield_12977）",
         key="bug_category_select"
       )
   else:
@@ -840,7 +843,7 @@ if operation == "创建 Ticket":
             work_type_id = work_types_map.get(work_type)
             priority_id = priorities_map.get(priority)
             selected_team = sp_team if sp_team != "（不设置）" else None
-            project_key = "DEMO"  # 固定使用 DEMO 项目
+            project_key = "SP"  # 固定使用 SP 项目
             
             # 解析 Sprint ID
             selected_sprint_id = None
@@ -906,7 +909,7 @@ elif operation == "查询 Ticket":
     ticket_number = st.text_input(
       "Ticket Number",
       value=st.session_state.query_ticket_number,
-      placeholder="例如: DEMO-30061",
+      placeholder="例如: SP-30061",
       help="输入完整的 Ticket Key",
       key="query_ticket_input"
     )
@@ -948,7 +951,7 @@ elif operation == "查询 Ticket":
             st.metric("Type", fields.get('issuetype', {}).get('name', 'N/A'))
           
           # SP Team 信息（如果有）
-          sp_team_data = fields.get('customfield_10002')
+          sp_team_data = fields.get('customfield_12628')
           if sp_team_data:
             st.info(f"**SP Team**: {sp_team_data.get('value', 'N/A')}")
           
@@ -1054,7 +1057,7 @@ elif operation == "批量更新 Resolution":
     "Ticket 列表（每行一个）",
     value=st.session_state.batch_tickets_input,
     height=150,
-    placeholder="DEMO-30061\nDEMO-30062\nDEMO-30063",
+    placeholder="SP-30061\nSP-30062\nSP-30063",
     help="每行输入一个 Ticket Key",
     key="batch_tickets_textarea"
   )
@@ -1196,7 +1199,7 @@ elif operation == "删除 Ticket":
     delete_ticket_number = st.text_input(
       "Ticket Number",
       value=st.session_state.delete_ticket_number,
-      placeholder="例如: DEMO-30061",
+      placeholder="例如: SP-30061",
       help="输入要删除的 Ticket Key",
       key="delete_ticket_input"
     )

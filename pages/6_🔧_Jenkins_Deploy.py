@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import sys
 import time
 import threading
@@ -22,21 +22,21 @@ st.set_page_config(
     layout="wide"
 )
 
-FIXED_SERVICES = ["demo-public-api", "demo-psi-service"]
+FIXED_SERVICES = ["pp-public-api", "pp-psi-service"]
 
 # 生产环境服务列表（Prod 文件夹）
 PROD_SERVICES = [
-    "prod-demo-public-api",
-    "prod-demo-public-api-job",
-    "prod-demo-psi-service",
-    "prod-demo-psi-web",
+    "prod-public-api",
+    "prod-public-api-job",
+    "prod-psi-service",
+    "prod-psi-web",
 ]
 PROD_BRANCH = "master"
 
 # 生产部署解锁口令（当前阶段固定为 None，永不解锁）
 PROD_DEPLOY_ENABLED = True
 
-JENKINS_URL_DEFAULT = "https://jenkins.example.com"
+JENKINS_URL_DEFAULT = "https://jenkins.qima.com"
 
 # ── 检查用户 ──────────────────────────────────────────────────────
 if "current_user" not in st.session_state or not st.session_state.current_user:
@@ -376,9 +376,9 @@ def runConnectionTest(username: str, api_token: str, jenkins_url: str,
         put(f"  ❌ 异常: {e}")
 
     put("")
-    put("【测试 3】访问 demo-public-api 任务详情…")
+    put("【测试 3】访问 pp-public-api 任务详情…")
     try:
-        r = requests.get(f"{base}/job/PP/job/demo-public-api/api/json", auth=auth, timeout=10)
+        r = requests.get(f"{base}/job/PP/job/pp-public-api/api/json", auth=auth, timeout=10)
         if r.status_code == 200:
             d = r.json()
             put(f"  ✅ 成功  任务: {d.get('name', 'N/A')}")
@@ -610,7 +610,7 @@ with tab_pp:
             with svc_col_input:
                 st.text_input(
                     f"🔹 {svc}",
-                    placeholder="例如: release-1.2.248 或 DEMO-30520",
+                    placeholder="例如: release-1.2.248 或 SP-30520",
                     key=f"branch_{svc}"
                 )
             with svc_col_btn:
@@ -677,9 +677,9 @@ with tab_pp:
     with col_right:
         st.markdown("**服务说明**")
         st.info(
-            "🔹 **demo-public-api**\n"
+            "🔹 **pp-public-api**\n"
             "Public API 服务，即将迁移至 EKS\n\n"
-            "🔹 **demo-psi-service**\n"
+            "🔹 **pp-psi-service**\n"
             "PSI 服务，即将迁移至 EKS"
         )
         with st.expander("部署模式说明", expanded=True):

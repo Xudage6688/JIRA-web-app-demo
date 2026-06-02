@@ -1,4 +1,4 @@
-﻿"""
+"""
 Services Images Extractor - Streamlit 页面
 从 qcore-apps-descriptors GitHub 仓库读取 kustomization.yml 获取镜像信息
 """
@@ -18,8 +18,11 @@ from modules.github_kustomize_client import GitHubKustomizeClient
 from modules.user_config_loader import UserConfigLoader
 from modules._services_images_logic import (
     calculateRemainingServices,
+    checkBranchStatus,
     checkMasterBranch,
+    highlightBranchStatus,
     highlightNonMaster,
+    countAttentionServices,
     countNonMasterServices,
 )
 
@@ -39,8 +42,8 @@ DEFAULT_CONFIG = {
     'environment': 'preprod',
     'services': [],
     'service_mappings': {
-        'demo-service-a': 'demo-service-a',
-        'LT-cloud': 'demo-program-service',
+        'ACA': 'aca',
+        'LT-cloud': 'program-service-cloud',
     },
 }
 
@@ -483,16 +486,16 @@ with st.sidebar:
             st.warning(f"⚠️ 服务列表文件不存在: {CIRCLECI_SERVICES_FILE}")
             # 使用默认服务列表作为备用
             available_services = [
-                "demo-aims-service",
-                "demo-aims-web",
-                "demo-service-a-new",
-                "demo-program-service",
-                "demo-program-web",
-                "demo-lt-service",
-                "demo-psi-web",
-                "demo-food-service",
-                "demo-food-app",
-                "demo-customer-service"
+                "aims-service-cloud",
+                "aims-web-cloud",
+                "aca-new",
+                "program-service-cloud",
+                "program-web-cloud",
+                "lt-external-service-cloud",
+                "psi-web-cloud",
+                "food-certification-service-cloud",
+                "food-certification-app",
+                "customer-service-cloud"
             ]
     except Exception as e:
         st.error(f"❌ 加载服务列表失败: {str(e)}")
@@ -548,7 +551,7 @@ with st.sidebar:
         height=100,
         help="每行：别名=目录名；以 # 开头为注释",
         key="service_mappings_text",
-        placeholder="ACA=demo-service-a\nLT-cloud=demo-program-service",
+        placeholder="ACA=aca\nLT-cloud=program-service-cloud",
     )
     
     # 合并服务列表
@@ -876,7 +879,7 @@ if reverse_query_button:
             for svc in _remaining_services:
                 if svc in results['success']:
                     version = results['success'][svc]
-                    is_master, status_icon = checkMasterBranch(version)
+                    branch_type, status_icon, status_text = checkBranchStatus(version)
                     last_update_raw = batch_last_updates.get(svc)
                     last_update_display = GitHubKustomizeClient.get_relative_time_string(last_update_raw) if last_update_raw else 'N/A'
                     results['details'].append({
@@ -884,9 +887,9 @@ if reverse_query_button:
                         'version': version,
                         'last_update': last_update_display,
                         'last_update_raw': last_update_raw,
-                        'is_master': is_master,
-                        'branch_status': f'{status_icon} {"master" if is_master else "非master"}',
-                        'status': f'{status_icon} {"master" if is_master else "非master"}',
+                        'branch_type': branch_type,
+                        'branch_status': f'{status_icon} {status_text}',
+                        'status': f'{status_icon} {status_text}',
                         'environment': current_environment.upper()
                     })
                 elif svc in results['failed']:
@@ -896,7 +899,7 @@ if reverse_query_button:
                         'version': 'N/A',
                         'last_update': 'N/A',
                         'last_update_raw': None,
-                        'is_master': False,
+                        'branch_type': 'unknown',
                         'branch_status': '❓ 未知',
                         'status': (
                             f'❌ {err[:50]}...'
@@ -909,11 +912,11 @@ if reverse_query_button:
             st.session_state.reverse_last_updates = batch_last_updates
             st.session_state.reverse_query_time = datetime.now()
 
-            non_master_count = countNonMasterServices(results['details'])
-            if non_master_count > 0:
-                st.warning(f"⚠️ 发现 {non_master_count} 个非 master 分支服务，请关注！")
+            attention_count = countAttentionServices(results['details'])
+            if attention_count > 0:
+                st.warning(f"⚠️ 发现 {attention_count} 个非 master 非 release 分支服务，请关注！")
             else:
-                st.success(f"✅ 所有剩余服务均为 master 分支")
+                st.success(f"✅ 所有剩余服务均为 master 或 release 分支")
 
             st.success(f"✅ 反向查询完成！成功: {len(results['success'])}, 失败: {len(results['failed'])}")
 
@@ -1074,15 +1077,16 @@ if st.session_state.reverse_query_results:
             st.metric("❌ 失败", len(reverse_results['failed']))
 
         with col4:
-            # 非 master 服务统计
-            non_master_count = countNonMasterServices(reverse_results['details'])
-            st.metric("⚠️ 非 master", non_master_count, delta=non_master_count if non_master_count > 0 else None)
+            # 非 master 非 release 服务统计
+            attention_count = countAttentionServices(reverse_results['details'])
+            st.metric("⚠️ 需关注", attention_count, delta=attention_count if attention_count > 0 else None)
 
         # 分支状态说明
         st.markdown("""
         **分支状态说明:**
         - ✅ master: 镜像版本以 "master" 开头（如 master-1.12.99-fff34a049）
-        - ⚠️ 非 master: 需关注，可能不是主分支
+        - 🏷️ release: 镜像版本以 "release" 开头（如 release-1.0.0）
+        - ⚠️ 非master: 需关注，可能是 feature/dev 等其他分支
         - ❓ 未知: 查询失败无法判断
         """)
 
@@ -1094,14 +1098,14 @@ if st.session_state.reverse_query_results:
             # 按 branch_status 升序排序（非 master 排在最前）
             df_reverse = df_reverse.sort_values(by='branch_status', ascending=True, na_position='last')
 
-            # 高亮非 master 分支（使用导入的函数）
-            styled_df = df_reverse.style.apply(highlightNonMaster, axis=1)
+            # 高亮需关注的分支（非 master 非 release）
+            styled_df = df_reverse.style.apply(highlightBranchStatus, axis=1)
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
             # 图例说明
             st.markdown("""
             **图例说明:**
-            🟡 黄色 = 非 master 分支服务（需关注）
+            🟡 黄色 = 非 master 非 release 分支服务（需关注）
             """)
 
         # 失败详情
@@ -1165,7 +1169,7 @@ with st.expander("📖 使用说明和最佳实践"):
     
     - 服务名称应与 GitHub 仓库中的目录名完全一致
     - 不含环境前后缀
-    - 例如：`demo-service-a-new`、`demo-aims-service`
+    - 例如：`aca-new`、`aims-service-cloud`
     - 别名映射统一在 `config/argocd_config.json` 的 `service_mappings` 中配置，或通过侧栏编辑后保存
     - 查询时合并：已保存的 `service_mappings` + 当前侧栏文本（未保存的文本可覆盖同名键）
     - 如果服务不存在，会收到警告提示

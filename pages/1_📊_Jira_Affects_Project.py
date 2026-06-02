@@ -1,46 +1,16 @@
-﻿# Jira Affects Project 提取工具
+# Jira Affects Project 提取工具
 import streamlit as st
 import os
 import pandas as pd
 import json
 import sys
-import streamlit.components.v1 as components
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.jira_extractor import JiraExtractor
 from modules.user_config_loader import get_jira_config, get_user_config_loader
-
-
-def copy_button(text: str, key: str):
-    """复制按钮 - 使用 components.html 执行 JavaScript 剪贴板功能"""
-    import hashlib
-    btn_id = f"cpbtn_{key}_{hashlib.md5(text.encode()).hexdigest()[:8]}"
-    escaped_text = repr(text)
-    # 注意：必须使用 streamlit.components.v1.html() 而不是 st.html()
-    # st.html() 不支持 JavaScript 执行
-    js = f"""
-<script>
-function _copy_{btn_id}() {{
-    navigator.clipboard.writeText({escaped_text}).then(function() {{
-        var el = document.getElementById("{btn_id}");
-        if(el) {{ el.textContent = "✅ 已复制"; el.style.backgroundColor = "#28a745"; el.style.color = "#fff"; setTimeout(function(){{ el.textContent = "📋 复制"; el.style.backgroundColor = ""; el.style.color = ""; }}, 1500); }}
-    }}).catch(function(err) {{
-        var el = document.getElementById("{btn_id}");
-        if(el) {{ el.textContent = "❌ 失败"; el.style.backgroundColor = "#dc3545"; el.style.color = "#fff"; }}
-    }});
-}}
-</script>
-<span id="{btn_id}" style="
-    display:inline-flex; align-items:center; gap:3px;
-    background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;
-    padding:6px 12px; font-size:13px; cursor:pointer;
-    color:#2e7d32; user-select:none; margin-left:4px;
-    transition: all 0.2s ease;
-" onclick="_copy_{btn_id}()">📋 复制</span>
-"""
-    components.html(js, height=50, scrolling=False)
+from modules.components import copy_button
 
 st.set_page_config(page_title="Jira Affects Project 提取工具", layout="wide")
 
@@ -61,10 +31,10 @@ if not user_jira_config:
 
 # 配置直接从 users_config.json 加载（统一配置管理）
 JIRA_CONFIG = {
-    'base_url': user_jira_config.get('base_url', 'https://demo.atlassian.net'),
+    'base_url': user_jira_config.get('base_url', 'https://qima.atlassian.net'),
     'api_token': user_jira_config.get('api_token', 'your_api_token_here'),
     'email': get_user_config_loader().get_user_email(current_user),
-    'filter_id': user_jira_config.get('filter_id', '10001'),
+    'filter_id': user_jira_config.get('filter_id', '20334'),
     'field_id': user_jira_config.get('field_id', '')
 }
 
@@ -238,10 +208,10 @@ with tab1:
                         st.info("💾 字段ID已保存到当前会话")
                         st.rerun()  # 刷新页面以更新UI
                     else:
-                        st.warning("⚠️ 未自动识别字段 ID，使用备用字段ID: customfield_10001")
+                        st.warning("⚠️ 未自动识别字段 ID，使用备用字段ID: customfield_12605")
                         # 使用备用字段ID
-                        st.session_state.detected_field_id = "customfield_10001"
-                        st.session_state.jira_config['field_id'] = "customfield_10001"
+                        st.session_state.detected_field_id = "customfield_12605"
+                        st.session_state.jira_config['field_id'] = "customfield_12605"
                         st.info("💾 字段ID已保存到当前会话")
                         st.rerun()
             except Exception as e:
@@ -375,7 +345,7 @@ with tab1:
         - **列表展示**: 一行一个项目，方便复制
         - **一键复制**: 支持复制到剪贴板
         - **配置持久化**: 使用本地文件存储，刷新页面后配置保持不变
-        - **项目映射**: 自动添加关联项目（如demo-service-a自动添加demo-service-a-cn）
+        - **项目映射**: 自动添加关联项目（如aca自动添加aca-cn）
         - **🔒 完全安全**: API Token始终隐藏，绝对不显示明文
         
         ### 💾 配置管理：
@@ -498,11 +468,11 @@ with tab2:
     st.subheader("🔄 重置映射")
     if st.button("🔄 重置为默认映射", key="reset_all_mappings"):
         default_mappings = {
-            "demo-service-a": ["demo-service-a-cn"],
-            "demo-public-api": ["demo-public-api-job"],
-            "demo-back-office": ["demo-back-office-job"],
-            "demo-aims-web": ["demo-aims-web-job"],
-            "demo-lt-service": ["demo-lt-service-job"]
+            "aca": ["aca-cn"],
+            "public-api": ["public-api-job"],
+            "back-office": ["back-office-job"],
+            "aims-web": ["aims-web-job"],
+            "lt-external-service": ["lt-external-service-job"]
         }
         
         if save_project_mappings(default_mappings):
@@ -536,8 +506,8 @@ with tab2:
         - **关联项目**: 需要自动添加的项目列表（逗号分隔）
         
         ### 💡 使用示例：
-        - 当检测到 `demo-service-a` 时，自动添加 `demo-service-a-cn`
-        - 当检测到 `demo-public-api` 时，自动添加 `demo-public-api-job`
+        - 当检测到 `aca` 时，自动添加 `aca-cn`
+        - 当检测到 `public-api` 时，自动添加 `public-api-job`
         
         ### 🔧 管理操作：
         - **添加规则**: 填写源项目和关联项目，点击添加
