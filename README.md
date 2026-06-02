@@ -5,39 +5,41 @@
 ![Test Coverage](https://img.shields.io/badge/Coverage-87%25-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
----
-
-一个基于 Streamlit 的 DevOps 自动化工具平台，集成 Jira 分析、CircleCI Pipeline 管理和 Jenkins 部署功能。
-
-## 工具列表
-
-| 工具 | 功能说明 |
-|------|---------|
-| 📊 Jira Affects Project | Jira 问题影响项目分析，支持项目映射和智能去重 |
-| 🐳 Services Images Extractor | 从 GitHub 提取容器镜像版本，支持多环境对比 |
-| 🌐 Open PR Url | PR 链接快速打开工具 |
-| 🚀 CircleCI Pipeline 管理 | Pipeline 触发、查询、监控和审批管理 |
-| 📝 Jira Operations Tool | Jira 工单管理工具，支持创建、查询、批量更新 Resolution |
-| 🔧 Jenkins 部署 | Jenkins 一键部署，支持顺序/并发模式，实时日志展示 |
-| 🧪 Test Tools | 日常测试辅助工具集合，全部在本地运行 |
+> 📖 **Languages:** [English](./README.md) | [中文](./README.zh.md)
 
 ---
 
-## 快速开始
+**QA DevOps Toolkit** is a Streamlit-based DevOps automation platform that integrates Jira analysis, CircleCI pipeline management, and Jenkins deployment capabilities.
 
-### 安装依赖
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| 📊 Jira Affects Project | Analyze Jira issues affecting projects with smart deduplication |
+| 🐳 Services Images Extractor | Extract container image versions from GitHub with multi-environment comparison |
+| 🌐 Open PR Url | Quick-open tool for PR links |
+| 🚀 CircleCI Pipeline | Pipeline triggering, querying, monitoring, and approval management |
+| 📝 Jira Operations | Issue management supporting create, search, and batch Resolution updates |
+| 🔧 Jenkins Deploy | One-click deployment supporting sequential/concurrent modes with live logs |
+| 🧪 Test Tools | Collection of daily testing utilities, all running locally |
+
+---
+
+## Quick Start
+
+### Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 启动应用
+### Run the Application
 
 ```bash
 streamlit run app.py
 ```
 
-### 访问地址
+### Access
 
 ```
 http://localhost:8501
@@ -45,15 +47,15 @@ http://localhost:8501
 
 ---
 
-## 配置说明
+## Configuration
 
-编辑 `config/users_config_example.json`，为每位使用者配置各工具的认证信息：
+Edit `config/users_config_example.json` to configure authentication credentials for each user:
 
 ```json
 {
   "users": {
     "username": {
-      "display_name": "显示名称",
+      "display_name": "Your Name",
       "email": "user@example.com",
       "jira": {
         "api_token": "# YOUR_JIRA_TOKEN",
@@ -82,87 +84,95 @@ http://localhost:8501
 }
 ```
 
-服务列表配置：编辑 `config/circleci-services.txt`，每行一个 CircleCI 服务名称。
+Service list configuration: Edit `config/circleci-services.txt`, one CircleCI service name per line.
 
 ---
 
-## 功能截图
+## Screenshots
 
 ### 📊 Jira Affects Project
 
-Jira 问题影响项目分析，支持项目映射和智能去重
+Analyze Jira issues affecting projects with smart deduplication
 
 ![Jira Affects Project](docs/images/Jira%20Affects%20Project.gif)
 
 ### 🐳 Services Images Extractor
 
-从 GitHub 提取容器镜像版本，支持多环境对比
+Extract container image versions from GitHub with multi-environment comparison
 
 ![Services Images](docs/images/Services%20Images.gif)
 
 ### 🌐 Open PR Url
 
-PR 链接快速打开工具
+Quick-open tool for PR links
 
 ![Open PR Url](docs/images/PRs%20open.gif)
 
-### 🚀 CircleCI Pipeline 管理
+### 🚀 CircleCI Pipeline
 
-Pipeline 触发、查询、监控和审批管理
+Pipeline triggering, querying, monitoring, and approval management
 
 ![CircleCI Pipeline](docs/images/CircleCI%20Pipeline.gif)
 
 ### 📝 Jira Operations Tool
 
-Jira 工单管理，支持创建、查询、批量更新
+Issue management supporting create, search, and batch Resolution updates
 
 ![Jira Operations](docs/images/Jira%20Operations.gif)
 
-### 🔧 Jenkins 部署
+### 🔧 Jenkins Deploy
 
-Jenkins 一键部署，支持顺序/并发模式，实时日志展示
+One-click deployment supporting sequential/concurrent modes with live logs
 
 ![Jenkins Deploy](docs/images/Jenkins%20Deploy.gif)
 
 ### 🧪 Test Tools
 
-日常测试辅助工具集合，全部在本地运行
+Collection of daily testing utilities, all running locally
 
 ![Test Tools](docs/images/Test%20tools.png)
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 qa-toolkit-demo/
-├── app.py                          # 主应用入口
-├── requirements.txt                # 依赖声明
-├── README.md                       # 项目文档
-├── config/                         # 配置目录
-│   ├── users_config_example.json   # 用户配置示例（含各工具 Token 占位符）
-│   ├── circleci-services.txt       # CircleCI 服务列表
-│   └── argocd_config.example.json  # ArgoCD 配置示例
-├── pages/                          # Streamlit 多页面
+├── app.py                           # Main application entry point
+├── requirements.txt                 # Dependencies
+├── README.md                        # Project documentation (English)
+├── README.zh.md                     # 项目文档（中文）
+├── config/                          # Configuration directory
+│   ├── users_config_example.json   # User config template with placeholders
+│   ├── circleci-services.txt       # CircleCI service list
+│   └── argocd_config.example.json  # ArgoCD config template
+├── pages/                           # Streamlit multi-page app
 │   ├── 1_📊_Jira_Affects_Project.py
 │   ├── 2_🐳_Services_Images_Extractor.py
 │   ├── 3_🌐_Open_PR_Url.py
 │   ├── 4_🚀_CircleCI_Pipeline.py
 │   ├── 5_📝_Jira_Operations.py
-│   └── 6_🔧_Jenkins_Deploy.py
-├── modules/                        # 公共模块
-│   ├── user_config_loader.py       # 多用户配置加载器 + 统一认证构建器
-│   ├── jira_extractor.py          # Jira 数据提取器（含 SafeLogger）
-│   ├── jira_operations_helper.py   # Jira 业务操作辅助（含 Sprint 并发查询）
-│   ├── test_case_importer.py       # Test Cases 导入 UI 层
-│   ├── _test_case_importer_logic.py # Test Cases 导入纯函数逻辑层
-│   └── github_kustomize_client.py  # GitHub Kustomize 镜像查询
-├── circleCi/                       # CircleCI 工具模块
+│   ├── 6_🔧_Jenkins_Deploy.py
+│   └── 7_🧪_Test_Tools.py
+├── modules/                         # Shared modules
+│   ├── user_config_loader.py        # Multi-user config loader + auth builder
+│   ├── jira_extractor.py           # Jira data extractor (with SafeLogger)
+│   ├── jira_operations_helper.py   # Jira business operations helper
+│   ├── test_case_importer.py       # Test Cases import UI layer
+│   ├── _test_case_importer_logic.py # Test Cases import pure function layer
+│   ├── github_kustomize_client.py  # GitHub Kustomize image query
+│   └── _test_tools/                # Test utilities (9 tools)
+│       ├── _api_perf_test.py
+│       ├── _create_aca_account.py
+│       ├── _generate_pdf.py
+│       └── ...
+├── circleCi/                        # CircleCI tools module
 │   ├── triggerJob.py
 │   ├── monitoring.py
-│   ├── batch_operations.py        # 批量触发与审批
-│   └── config_loader.py
-└── tests/                          # 单元测试
+│   ├── batch_operations.py
+│   ├── config_loader.py
+│   └── ...
+└── tests/                           # Unit tests
     ├── test_user_config_loader.py
     ├── test_jira_extractor.py
     ├── test_test_case_importer_logic.py
@@ -173,7 +183,7 @@ qa-toolkit-demo/
 
 ---
 
-## 测试
+## Testing
 
 ```bash
 # Run all tests
@@ -186,52 +196,59 @@ pytest tests/ --cov=. --cov-report=term-missing
 pytest tests/test_commit_search.py -v
 ```
 
-**覆盖范围**：
-- `build_jira_auth_headers` / `build_jenkins_auth` / `build_circleci_headers` 认证构建
-- `SafeLogger` 日志降级
-- `JiraExtractor` 核心方法
-- `UserConfigLoader` 完整功能
-- Test Cases 导入全部纯函数逻辑层
-- Commit ID 搜索功能
-- 多环境审批信息获取
-- 批量触发与审批功能
+**Coverage Includes:**
+- Authentication builders: `build_jira_auth_headers`, `build_jenkins_auth`, `build_circleci_headers`
+- `SafeLogger` log downgrade
+- `JiraExtractor` core methods
+- `UserConfigLoader` full functionality
+- Test Cases import pure function layer
+- Commit ID search functionality
+- Multi-environment approval info retrieval
+- Batch triggering and approval functions
 
-**当前覆盖率**: 87%
+**Current Coverage:** 87%
 
 ---
 
-## 更新日志
+## Documentation
+
+- [Development Guide](./docs/guides/development.md) - Setup and development
+- [开发指南](./docs/guides/development.zh.md) - 环境配置与开发
+
+---
+
+## Changelog
 
 ### v5.0 (2026-06-02)
-- **开源版本**：重命名为 QA DevOps Toolkit
-- **完全脱敏**：移除所有公司特定域名的引用
-- **配置示例**：提供 config/users_config_example.json 配置模板
+- **Open Source Version**: Renamed to QA DevOps Toolkit
+- **Full Sanitization**: Removed all company-specific domain references
+- **Config Templates**: Provided `config/users_config_example.json` configuration template
 
 ### v4.5 (2026-06-01)
-- 添加 shields.io 彩色 badges，优化视觉效果
-- 为全部 7 个工具页面添加功能演示 GIF/PNG
-- GIF 分散到各工具详细描述下方，便于对照参考
+- Added shields.io badges for visual enhancement
+- Added functional demo GIFs/PNGs for all 7 tool pages
+- GIFs distributed under each tool's detailed description for easy reference
 
 ### v4.4 (2026-05-11)
-- 批量操作 (Tab5)：新增第5个 Tab，支持批量触发多个服务到指定分支
-- 文本输入服务列表：支持粘贴多行服务名快速选择
-- 批量审批 Preprod：扫描并一键审批所有待审批 Jobs
-- 批量操作模块：新增 `circleCi/batch_operations.py` 纯函数逻辑层
-- 单元测试：新增 17 个批量操作测试，覆盖率从 85% 提升至 87%
-- 安全修复：移除侧边栏 Token 片段显示，避免敏感信息泄露
+- Batch Operations (Tab5): New Tab 5, support batch triggering multiple services to specified branch
+- Service List Text Input: Support pasting multi-line service names for quick selection
+- Batch Approve Preprod: Scan and one-click approve all pending Jobs
+- Batch Operations Module: Added `circleCi/batch_operations.py` pure function layer
+- Unit Tests: Added 17 batch operation tests, coverage increased from 85% to 87%
+- Security Fix: Removed Token fragment display in sidebar to prevent sensitive info leakage
 
 ### v4.3 (2026-04-27)
-- Commit ID 搜索 (Tab4)：新增第4个 Tab，支持通过 commit hash 前缀跨服务搜索 Pipeline
-- 多环境审批展示：支持 dev/staging/preprod/uat/prod 等多环境审批状态展示
-- 日志系统升级：所有 `print()` 替换为 `logging` 模块
-- 测试覆盖率提升：新增 51 个单元测试，覆盖率从 66% 提升至 85%
+- Commit ID Search (Tab4): New Tab 4, support cross-service search for pipeline by commit hash prefix
+- Multi-environment Approval Display: Support dev/staging/preprod/uat/prod environment approval status
+- Logging System Upgrade: All `print()` replaced with `logging` module
+- Coverage Improvement: Added 51 unit tests, coverage increased from 66% to 85%
 
 ### v4.0 (2026-03-24)
-- 认证体系统一：Jira / Jenkins / CircleCI 认证逻辑收敛到 `user_config_loader.py`
-- Test Cases 模块重构：UI 层与业务逻辑层分离，支持单元测试
-- Sprint 查询并发：Board Sprint 查询改为 10 线程并发，33 Board 场景从数秒降至亚秒级
-- 测试覆盖建立：新增 58 个单元测试
+- Unified Authentication System: Jira/Jenkins/CircleCI authentication logic consolidated to `user_config_loader.py`
+- Test Cases Module Refactoring: UI layer and business logic layer separated, supporting unit testing
+- Sprint Query Concurrency: Board Sprint query changed to 10-thread concurrent, 33 Board scenario reduced from seconds to sub-second
+- Test Coverage Established: Added 58 unit tests
 
 ---
 
-**版本**: 5.0 | **最后更新**: 2026-06-02 | **维护者**: Daisy Liu
+**Version**: 5.0 | **Last Updated**: 2026-06-02 | **Maintainer**: Daisy Liu
