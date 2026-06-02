@@ -5,71 +5,40 @@ import csv
 import os
 import logging
 import re
-from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
-
-# 敏感信息过滤模式
-_SENSITIVE_PATTERNS = [
-    (r'([A-Za-z0-9]{20,})', '***TOKEN***'),  # API tokens
-    (r'Bearer\s+\S+', 'Bearer ***'),
-    (r'Basic\s+\S+', 'Basic ***'),
-    (r'["\']?api[_-]?token["\']?\s*[:=]\s*["\']?\S+["\']?', 'api_token=***'),
-    (r'["\']?token["\']?\s*[:=]\s*["\']?\S+["\']?', 'token=***'),
-    (r'["\']?password["\']?\s*[:=]\s*["\']?\S+["\']?', 'password=***'),
-]
-
-def _sanitize_message(msg: str) -> str:
-    """过滤敏感信息，防止凭据泄露到日志
-
-    Args:
-        msg: 原始日志消息
-
-    Returns:
-        过滤后的安全消息
-    """
-    if not isinstance(msg, str):
-        msg = str(msg)
-    for pattern, replacement in _SENSITIVE_PATTERNS:
-        msg = re.sub(pattern, replacement, msg, flags=re.IGNORECASE)
-    return msg
+from typing import List, Dict, Optional
 
 # 为 Streamlit 环境创建安全的日志记录器
 class SafeLogger:
-    """安全的日志记录器，避免 stderr 关闭导致的问题，并过滤敏感信息"""
-
+    """安全的日志记录器，避免 stderr 关闭导致的问题"""
+    
     def __init__(self, name):
         self.name = name
-        self._logger = logging.getLogger(name)
-
-    def _safe_log(self, level: str, msg: str) -> None:
-        """安全地记录日志，捕获所有异常，降级写入文件，并过滤敏感信息"""
+    
+    def _safe_log(self, level, msg):
+        """安全地记录日志，捕获所有异常，降级写入文件"""
         try:
-            # 过滤敏感信息
-            safe_msg = _sanitize_message(msg)
-            log_method = getattr(self._logger, level.lower(), self._logger.info)
-            log_method(safe_msg)
+            print(f"[{level}] {msg}")
         except Exception:
-            # logging 失败时降级写入文件
+            # print 失败时降级写入文件，确保日志不丢失
             try:
-                safe_msg = _sanitize_message(msg)
                 log_path = Path(__file__).parent.parent / "logs" / "app.log"
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(f"[{level}] {safe_msg}\n")
+                    f.write(f"[{level}] {msg}\n")
             except Exception:
                 pass  # 双重降级，最终静默
-
-    def info(self, msg: str) -> None:
+    
+    def info(self, msg):
         self._safe_log("INFO", msg)
-
-    def warning(self, msg: str) -> None:
+    
+    def warning(self, msg):
         self._safe_log("WARNING", msg)
-
-    def error(self, msg: str) -> None:
+    
+    def error(self, msg):
         self._safe_log("ERROR", msg)
-
-    def debug(self, msg: str) -> None:
+    
+    def debug(self, msg):
         self._safe_log("DEBUG", msg)
 
 logger = SafeLogger(__name__)
@@ -80,7 +49,7 @@ class JiraExtractor:
         self.api_token = api_token
         self.email = email
         self.session = requests.Session()
-
+        
         # 设置认证头
         if email:
             # 基本认证（邮箱 + API 令牌）
@@ -92,29 +61,14 @@ class JiraExtractor:
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             })
-
+        
         self.session.headers.update({
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         })
-
+        
         # 加载项目映射配置
         self.project_mappings = self._load_project_mappings()
-
-    def close(self) -> None:
-        """关闭 Session 释放连接资源"""
-        if self.session:
-            self.session.close()
-            self.session = None
-
-    def __enter__(self) -> "JiraExtractor":
-        """上下文管理器入口"""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """上下文管理器退出，自动清理资源"""
-        self.close()
-        return False
 
     def _load_project_mappings(self) -> Dict[str, List[str]]:
         """加载项目映射配置"""
@@ -127,8 +81,8 @@ class JiraExtractor:
             else:
                 logger.warning(f"项目映射文件 {mapping_file} 不存在，使用默认映射")
                 return {
-                    "demo-service-a": ["demo-service-a-cn"],
-                    "demo-public-api": ["demo-public-api-job"]
+                    "aca": ["aca-cn"],
+                    "public-api": ["public-api-job"]
                 }
         except Exception as e:
             logger.error(f"加载项目映射失败: {e}")
@@ -138,12 +92,12 @@ class JiraExtractor:
         """应用项目映射，添加关联项目"""
         if not self.project_mappings:
             return projects
-
+        
         expanded_projects = projects.copy()
-
+        
         for project in projects:
             project_clean = project.strip()
-
+            
             # 检查是否有精确映射规则（避免子字符串误匹配）
             for source_project, target_projects in self.project_mappings.items():
                 # 精确匹配（大小写不敏感）
@@ -153,16 +107,16 @@ class JiraExtractor:
                         if target_project not in expanded_projects:
                             expanded_projects.append(target_project)
                             logger.info(f"添加关联项目: {source_project} -> {target_project}")
-
+        
         return expanded_projects
 
-    def get_affects_project_field_id(self, known_field_id: str = "customfield_10001") -> str:
+    def get_affects_project_field_id(self, known_field_id: str = "customfield_12605") -> str:
         """
         获取 'Affects Project' 字段的 ID
-
+        
         Args:
-            known_field_id: 已知的字段 ID（如 customfield_10001）
-
+            known_field_id: 已知的字段 ID（如 customfield_12605）
+            
         Returns:
             字段 ID
         """
@@ -172,51 +126,51 @@ class JiraExtractor:
     def search_issues_by_jql(self, jql: str, custom_field_id: str = None, max_results: int = 100) -> List[Dict]:
         """
         使用新的增强 JQL API 搜索问题
-
+        
         Args:
             jql: JQL 查询字符串
             custom_field_id: 'Affects Project' 字段 ID
             max_results: 最大结果数
-
+            
         Returns:
             问题列表
         """
         # 使用新的增强搜索 API
         url = f"{self.base_url}/rest/api/3/search/jql"
-
+        
         # 构建查询参数
-        fields = ["summary", "key", "status", "customfield_10002"]
+        fields = ["summary", "key", "status", "customfield_12628"]
         if custom_field_id:
             fields.append(custom_field_id)
-
+        
         # 使用 POST 请求发送 JQL 查询
         payload = {
             'jql': jql,
             'fields': fields,
             'maxResults': max_results
         }
-
+        
         try:
             logger.info(f"尝试使用增强 JQL 搜索 API...")
             logger.info(f"URL: {url}")
             logger.info(f"JQL: {jql}")
-
+            
             response = self.session.post(url, json=payload)
-
+            
             if response.status_code == 410:
                 logger.warning(f"增强 JQL API 返回 410 Gone，尝试传统 API...")
                 # 如果新 API 也不可用，尝试旧的 API
                 return self._search_issues_legacy(jql, custom_field_id, max_results)
-
+            
             response.raise_for_status()
-
+            
             data = response.json()
             issues = data.get('issues', [])
             total = data.get('total', 0)
-
-            logger.info(f"成功使用增强 JQL API 获取 {len(issues)} 个问题，总计 {total} 个")
+            
+            logger.info(f"✓ 成功使用增强 JQL API 获取 {len(issues)} 个问题，总计 {total} 个")
             return issues
-
+            
         except requests.exceptions.RequestException as e:
             logger.error(f"增强 JQL API 失败: {e}")
             # 尝试使用传统 API
@@ -229,98 +183,98 @@ class JiraExtractor:
     def _search_issues_legacy(self, jql: str, custom_field_id: str = None, max_results: int = 100) -> List[Dict]:
         """
         使用传统搜索 API（作为备用）
-
+        
         Args:
             jql: JQL 查询字符串
             custom_field_id: 'Affects Project' 字段 ID
             max_results: 最大结果数
-
+            
         Returns:
             问题列表
         """
         # 尝试不同的 API 版本
         api_versions = ["2", "3"]
         last_error = None
-
+        
         for api_version in api_versions:
             try:
                 url = f"{self.base_url}/rest/api/{api_version}/search"
-
+                
                 # 构建查询参数
-                fields = ["summary", "key", "status", "customfield_10002"]
+                fields = ["summary", "key", "status", "customfield_12628"]
                 if custom_field_id:
                     fields.append(custom_field_id)
-
+                
                 params = {
                     'jql': jql,
                     'fields': ','.join(fields),
                     'maxResults': max_results,
                     'startAt': 0
                 }
-
+                
                 logger.info(f"尝试传统 API v{api_version}...")
                 response = self.session.get(url, params=params)
-
+                
                 if response.status_code == 410:
                     logger.warning(f"传统 API v{api_version} 返回 410 Gone")
                     last_error = requests.exceptions.HTTPError(f"API v{api_version} 不再可用")
                     continue
-
+                
                 response.raise_for_status()
-
+                
                 data = response.json()
                 issues = data.get('issues', [])
                 total = data.get('total', 0)
-
-                logger.info(f"成功使用传统 API v{api_version} 获取 {len(issues)} 个问题，总计 {total} 个")
+                
+                logger.info(f"✓ 成功使用传统 API v{api_version} 获取 {len(issues)} 个问题，总计 {total} 个")
                 return issues
-
+                
             except requests.exceptions.RequestException as e:
                 logger.error(f"传统 API v{api_version} 失败: {e}")
                 last_error = e
                 continue
-
+        
         # 如果所有 API 版本都失败了
         logger.error(f"所有搜索 API 版本都失败了: {last_error}")
         raise last_error
 
-    def search_issues(self, filter_id: str = "10001", custom_field_id: str = None, max_results: int = 100) -> List[Dict]:
+    def search_issues(self, filter_id: str = "24058", custom_field_id: str = None, max_results: int = 100) -> List[Dict]:
         """
         使用过滤器搜索问题
-
+        
         Args:
             filter_id: Jira 过滤器 ID
             custom_field_id: 'Affects Project' 字段 ID
             max_results: 最大结果数
-
+            
         Returns:
             问题列表
         """
         url = f"{self.base_url}/rest/api/3/search"
-
+        
         # 构建查询参数
-        fields = ["summary", "key", "status", "customfield_10002"]
+        fields = ["summary", "key", "status", "customfield_12628"]
         if custom_field_id:
             fields.append(custom_field_id)
-
+        
         params = {
             'jql': f'filter={filter_id}',
             'fields': ','.join(fields),
             'maxResults': max_results,
             'startAt': 0
         }
-
+        
         try:
             response = self.session.get(url, params=params)
-
+            
             # 如果过滤器 API 返回 410，尝试使用直接 JQL 查询
             if response.status_code == 410:
                 logger.warning(f"过滤器 API 返回 410 Gone，尝试直接 JQL 查询...")
                 logger.info(f"过滤器 {filter_id} API 已弃用，使用直接 JQL 查询作为备用...")
-
+                
                 # 使用精确的 JQL 查询（获取等待发布的已完成问题）
                 fallback_jql = (
-                    'project = DEMO '
+                    'project = SP '
                     'AND issuetype IN (standardIssueTypes(), subTaskIssueTypes()) '
                     'AND status = Done '
                     'AND resolution = "Waiting to Release" '
@@ -329,16 +283,16 @@ class JiraExtractor:
                 )
                 logger.info(f"备用 JQL: {fallback_jql}")
                 return self.search_issues_by_jql(fallback_jql, custom_field_id, max_results)
-
+            
             response.raise_for_status()
-
+            
             data = response.json()
             issues = data.get('issues', [])
             total = data.get('total', 0)
-
+            
             logger.info(f"成功获取 {len(issues)} 个问题，总计 {total} 个")
             return issues
-
+            
         except requests.exceptions.RequestException as e:
             logger.error(f"搜索问题失败: {e}")
             raise
@@ -346,18 +300,18 @@ class JiraExtractor:
     def parse_adf_content(self, adf_data: Dict) -> str:
         """
         解析 Atlassian Document Format (ADF) 内容提取文本
-
+        
         Args:
             adf_data: ADF 格式的数据
-
+            
         Returns:
             提取的文本内容
         """
         if not isinstance(adf_data, dict):
             return str(adf_data)
-
+        
         text_parts = []
-
+        
         def extract_text_from_content(content):
             """递归提取内容中的文本"""
             if isinstance(content, list):
@@ -370,115 +324,117 @@ class JiraExtractor:
                         text_parts.append(text.strip())
                 elif 'content' in content:
                     extract_text_from_content(content['content'])
-
+        
         # 开始提取文本
         if 'content' in adf_data:
             extract_text_from_content(adf_data['content'])
-
+        
         return ' '.join(text_parts)
 
     def extract_projects_from_text(self, text: str) -> List[str]:
         """
         从文本中提取项目名称（完全按照 API 返回的内容，不做过滤）
-
+        
         Args:
             text: 包含项目信息的文本
-
+            
         Returns:
             项目名称列表
         """
         if not text or text.strip().upper() in ['NONE', 'NA', '']:
             return []
-
+        
         # 移除常见的非项目名称标记
         clean_text = text.strip()
-
+        
         # 移除 +数字 格式（如 "+7"）
         clean_text = re.sub(r'\s*\+\d+', '', clean_text)
-
+        
         # 按空格、逗号、分号、换行符分割
         items = re.split(r'[,;\n\s]+', clean_text)
-
+        
         projects = []
         for item in items:
             item = item.strip()
-
+            
             # 跳过空字符串和太短的字符串
             if not item or len(item) < 2:
                 continue
-
+            
             # 跳过明确的非项目名称（只排除明显的无效值）
             if item.upper() in ['NA', 'NONE', 'NULL', '']:
                 continue
-
+            
             # 跳过 URL 和路径
             if any(exclude in item.lower() for exclude in ['http', '://', '.com', '.git', '.org']):
                 continue
-
+            
             # 添加到项目列表（保持原始大小写）
             projects.append(item)
-
+        
         return projects
 
     def find_affects_project_field_id(self, filter_id: str) -> Optional[str]:
-        """查找Affects Project字段ID（优化版：避免N+1查询）"""
+        """查找Affects Project字段ID（保持向后兼容）"""
         try:
-            # 方法1：使用字段元数据API（仅1次调用）
-            field_url = f"{self.base_url}/rest/api/3/field"
-            field_response = self.session.get(field_url)
-            if field_response.status_code == 200:
-                fields_data = field_response.json()
-                keywords = ['affects', 'project', 'service', 'cloud', 'legacy', 'web', 'api']
-                for field in fields_data:
-                    field_id = field.get('id', '')
-                    field_name = field.get('name', '').lower()
-                    if field_id.startswith('customfield_'):
-                        if any(kw in field_name for kw in keywords):
-                            logger.info(f"通过字段API找到匹配字段: {field_id} ({field.get('name')})")
-                            return field_id
-
-            # 方法2：仅检查第一个问题（避免N+1）
+            # 首先尝试使用新的JQL API
             try:
                 jql = f'filter={filter_id}'
-                issues = self.search_issues_by_jql(jql, max_results=1)
+                issues = self.search_issues_by_jql(jql, max_results=10)
             except Exception as e:
-                logger.warning(f"JQL API失败，尝试传统API: {e}")
+                logger.warning(f"新JQL API失败，尝试传统API: {e}")
+                # 如果新API失败，尝试传统API
                 url = f"{self.base_url}/rest/api/3/search"
                 params = {
                     'jql': f'filter={filter_id}',
                     'fields': 'summary,key',
-                    'maxResults': 1,
+                    'maxResults': 10,
                     'startAt': 0
                 }
+                
                 response = self.session.get(url, params=params)
                 response.raise_for_status()
                 issues = response.json().get('issues', [])
+            
+            if not issues:
+                logger.warning("过滤器中没有找到问题，使用已知字段ID作为备用")
+                return "customfield_12605"
+            
+            potential_fields = []
 
-            if issues:
-                issue_key = issues[0].get('key', '')
-                issue_url = f"{self.base_url}/rest/api/3/issue/{issue_key}?expand=names"
-                issue_response = self.session.get(issue_url)
-                issue_response.raise_for_status()
-                issue_data = issue_response.json()
+            for issue in issues:
+                try:
+                    issue_key = issue.get('key', '')
+                    issue_url = f"{self.base_url}/rest/api/3/issue/{issue_key}?expand=names"
+                    
+                    # 正确处理响应对象
+                    issue_response = self.session.get(issue_url)
+                    issue_response.raise_for_status()
+                    issue_data = issue_response.json()
+                    
+                    fields = issue_data.get('fields', {})
+                    names = issue_data.get('names', {})
 
-                fields = issue_data.get('fields', {})
-                names = issue_data.get('names', {})
-
-                for field_id, value in fields.items():
-                    if field_id.startswith('customfield_') and value:
-                        field_name = names.get(field_id, 'N/A')
-                        if any(kw in field_name.lower() or (isinstance(value, str) and kw in value.lower())
-                               for kw in ['service', 'cloud', 'legacy', 'web', 'api', 'project']):
-                            logger.info(f"通过问题检查找到匹配字段: {field_id} ({field_name})")
-                            return field_id
-
-            logger.warning("未找到问题或未匹配字段，使用备用字段ID")
-            return "customfield_10001"
+                    for field_id, value in fields.items():
+                        if field_id.startswith('customfield_') and value:
+                            field_name = names.get(field_id, 'N/A')
+                            if any(kw in field_name.lower() or (isinstance(value, str) and kw in value.lower())
+                                   for kw in ['service', 'cloud', 'legacy', 'web', 'api', 'project']):
+                                logger.info(f"找到匹配字段: {field_id} ({field_name})")
+                                return field_id
+                except Exception as issue_error:
+                    logger.warning(f"处理问题 {issue_key} 时出错: {issue_error}")
+                    continue
 
         except Exception as e:
             logger.error(f"字段识别失败: {e}")
-            logger.info("使用已知字段ID作为备用: customfield_10001")
-            return "customfield_10001"
+            # 如果自动检测失败，返回已知的字段ID作为备用
+            logger.info("使用已知字段ID作为备用: customfield_12605")
+            return "customfield_12605"
+        
+        # 如果没有找到匹配的字段，返回已知的字段ID
+        logger.info("未找到匹配字段，使用已知字段ID: customfield_12605")
+        return "customfield_12605"
 
     def extract_projects_from_filter(self, filter_id, custom_field_id: str = None) -> List[Dict]:
         """从过滤器提取项目（保持向后兼容）"""
@@ -493,7 +449,7 @@ class JiraExtractor:
             logger.error(f"使用过滤器搜索失败: {e}")
             # 如果失败，尝试使用直接JQL查询
             fallback_jql = (
-                'project = DEMO '
+                'project = SP '
                 'AND issuetype IN (standardIssueTypes(), subTaskIssueTypes()) '
                 'AND status = Done '
                 'AND resolution = "Waiting to Release" '
@@ -501,37 +457,37 @@ class JiraExtractor:
                 'ORDER BY Key ASC'
             )
             issues = self.search_issues_by_jql(fallback_jql, custom_field_id, max_results=1000)
-
+        
         return self._extract_affects_projects(issues, custom_field_id)
 
     def _extract_affects_projects(self, issues: List[Dict], custom_field_id: Optional[str]) -> List[Dict]:
         """从问题列表中提取 'Affects Project' 信息"""
         results = []
         all_projects = set()
-
+        
         for issue in issues:
             fields = issue.get('fields', {})
             issue_key = issue.get('key', '')
             summary = fields.get('summary', '')
             status = fields.get('status', {}).get('name', '')
-            sp_team_raw = fields.get('customfield_10002', None)
+            sp_team_raw = fields.get('customfield_12628', None)
             if isinstance(sp_team_raw, dict):
                 sp_team = sp_team_raw.get('value', '')
             elif sp_team_raw is not None:
                 sp_team = str(sp_team_raw)
             else:
                 sp_team = ''
-
+            
             # 如果没有字段ID，跳过 Affects Project 提取
             if custom_field_id is None:
                 affects_project_raw = ''
             else:
                 affects_project_raw = fields.get(custom_field_id, '')
-
+            
             # 处理不同类型的字段值
             projects = []
             affects_project_str = ""
-
+            
             if affects_project_raw:
                 if isinstance(affects_project_raw, str):
                     # 字符串类型，直接处理
@@ -552,7 +508,7 @@ class JiraExtractor:
                                 project_texts.append(str(value))
                         else:
                             project_texts.append(str(item))
-
+                    
                     affects_project_str = " ".join(project_texts)
                     projects = self.extract_projects_from_text(affects_project_str)
                 elif isinstance(affects_project_raw, dict):
@@ -570,16 +526,16 @@ class JiraExtractor:
                     # 其他类型，转换为字符串
                     affects_project_str = str(affects_project_raw)
                     projects = self.extract_projects_from_text(affects_project_str)
-
+                
                 # 应用项目映射
                 if projects:
                     projects = self._apply_project_mappings(projects)
                     # 重新生成字符串表示
                     affects_project_str = ", ".join(projects)
-
+                
                 # 添加项目到总列表
                 all_projects.update(projects)
-
+            
             results.append({
                 'issue_key': issue_key,
                 'summary': summary,
@@ -588,11 +544,11 @@ class JiraExtractor:
                 'affects_projects': projects,
                 'affects_projects_raw': affects_project_str
             })
-
+        
         logger.info(f"发现 {len(all_projects)} 个唯一项目")
         if all_projects:
             logger.info(f"项目: {sorted(all_projects)}")
-
+        
         return results
 
     def _process_field_value(self, field_val):
@@ -609,7 +565,7 @@ class JiraExtractor:
         else:
             return "", []
 
-    def save_results_to_file(self, results: List[Dict]) -> Tuple[str, str]:
+    def save_results_to_file(self, results: List[Dict]):
         """保存结果到文件"""
         results_dir = "results"
         os.makedirs(results_dir, exist_ok=True)
@@ -617,11 +573,11 @@ class JiraExtractor:
         prefix = f"jira_affects_projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         json_path = os.path.join(results_dir, f"{prefix}.json")
         csv_path = os.path.join(results_dir, f"{prefix}.csv")
-
+        
         # 保存JSON文件
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
-
+        
         # 准备CSV数据，确保列名匹配
         csv_data = []
         for result in results:
@@ -633,7 +589,7 @@ class JiraExtractor:
                 'affects_projects_count': len(result.get('affects_projects', []))
             }
             csv_data.append(csv_row)
-
+        
         # 保存CSV文件
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             if csv_data:
@@ -641,7 +597,7 @@ class JiraExtractor:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(csv_data)
-
+        
         return json_path, csv_path
 
     def get_project_mappings(self) -> Dict[str, List[str]]:
@@ -657,10 +613,10 @@ class JiraExtractor:
                 "version": "1.1.0",
                 "last_updated": datetime.now().strftime("%Y-%m-%d")
             }
-
+            
             with open("project_mapping.json", "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
-
+            
             # 更新内存中的配置
             self.project_mappings = new_mappings
             return True

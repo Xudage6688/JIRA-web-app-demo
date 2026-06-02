@@ -1,6 +1,6 @@
 """
 Test Case Importer - 导入 Test Cases 到 Xray
-从 Jira Operations 页面拆分而出
+从 pages/5_📝_Jira_Operations.py 拆分而出
 UI 编排层，核心业务逻辑委托给 _test_case_importer_logic.py
 """
 
@@ -37,7 +37,7 @@ def render_test_case_importer_tab(
 ) -> None:
     """渲染"导入 Test Cases"Tab，接受外部注入的上下文变量"""
 
-    st.header("导入 Test Cases 到 Xray")
+    st.header("📥 导入 Test Cases 到 Xray")
     st.markdown("将测试用例批量导入 Jira Xray，并与指定 Ticket 建立关联。")
 
     # ===== 加载 Xray 配置 =====
@@ -51,15 +51,15 @@ def render_test_case_importer_tab(
     st.markdown("---")
 
     # ===== 区域 A：参数配置 =====
-    st.subheader("导入参数配置")
+    st.subheader("⚙️ 导入参数配置")
 
     param_col1, param_col2 = st.columns(2)
 
     with param_col1:
         sp_teams_list = metadata.get('sp_teams', [])
-        sp_team_options_import = sp_teams_list if sp_teams_list else ["Team-Epsilon"]
-        default_team_idx = sp_team_options_import.index("Team-Epsilon") \
-            if "Team-Epsilon" in sp_team_options_import else 0
+        sp_team_options_import = sp_teams_list if sp_teams_list else ["Mermaid"]
+        default_team_idx = sp_team_options_import.index("Mermaid") \
+            if "Mermaid" in sp_team_options_import else 0
         selected_sp_team = st.selectbox(
             "SP Team",
             options=sp_team_options_import,
@@ -92,9 +92,9 @@ def render_test_case_importer_tab(
             custom_title = ""
 
         related_ticket = st.text_input(
-            "Related Ticket（DEMO-XXXXX）",
+            "Related Ticket（SP-XXXXX）",
             value=st.session_state.get("import_related_ticket", ""),
-            placeholder="例如: DEMO-10001",
+            placeholder="例如: SP-30088",
             help="所有导入的 Test Cases 将与此 Ticket 建立 is tested by 关联",
             key="import_related_ticket_input"
         )
@@ -103,9 +103,9 @@ def render_test_case_importer_tab(
     st.markdown("---")
 
     # ===== 区域 B：数据来源 =====
-    st.subheader("Test Cases 数据来源")
+    st.subheader("📂 Test Cases 数据来源")
 
-    tab_upload, tab_manual, tab_clipboard = st.tabs(["上传 Excel 文件", "手动填写", "从剪切板粘贴"])
+    tab_upload, tab_manual, tab_clipboard = st.tabs(["📁 上传 Excel 文件", "✏️ 手动填写", "📋 从剪切板粘贴"])
 
     df_cases = None
 
@@ -122,17 +122,17 @@ def render_test_case_importer_tab(
                 with open(template_path, "rb") as f:
                     template_bytes = f.read()
                 st.download_button(
-                    label="下载模板",
+                    label="📥 下载模板",
                     data=template_bytes,
                     file_name="test-cases-template.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     help="下载 Excel 模板，填写 Action / Data / Expected Result 三列后上传"
                 )
             else:
-                st.warning("模板文件未找到")
+                st.warning("⚠️ 模板文件未找到")
 
         with template_col2:
-            st.info("模板说明：Excel 或 CSV 文件包含三列 — **Action**（动作）、**Data**（测试数据）、**Expected Result**（预期结果）。每行对应一条 Test Case。CSV 文件需使用 UTF-8 编码，逗号分隔。")
+            st.info("📋 模板说明：Excel 或 CSV 文件包含三列 — **Action**（动作）、**Data**（测试数据）、**Expected Result**（预期结果）。每行对应一条 Test Case。CSV 文件需使用 UTF-8 编码，逗号分隔。")
 
         uploaded_file = st.file_uploader(
             "上传填写好的 xlsx 或 csv 文件",
@@ -166,7 +166,7 @@ def render_test_case_importer_tab(
                 missing_cols = [c for c in required_cols if c not in df_raw.columns]
 
                 if missing_cols:
-                    st.error(f"文件缺少必要列：{missing_cols}。请使用模板文件。")
+                    st.error(f"❌ 文件缺少必要列：{missing_cols}。请使用模板文件。")
                 else:
                     if "Data" not in df_raw.columns:
                         df_raw["Data"] = ""
@@ -176,9 +176,9 @@ def render_test_case_importer_tab(
                     ].copy().reset_index(drop=True)
 
                     if df_upload.empty:
-                        st.warning("文件中没有有效的 Test Case 数据（Action 列为空）")
+                        st.warning("⚠️ 文件中没有有效的 Test Case 数据（Action 列为空）")
                     else:
-                        st.success(f"解析成功，共 **{len(df_upload)}** 条 Test Cases")
+                        st.success(f"✅ 解析成功，共 **{len(df_upload)}** 条 Test Cases")
                         preview_df = df_upload[["Action", "Data", "Expected Result"]].copy()
                         preview_df.index = preview_df.index + 1
                         preview_df.index.name = "#"
@@ -186,9 +186,9 @@ def render_test_case_importer_tab(
                         df_cases = df_upload
 
             except Exception as parse_err:
-                st.error(f"解析文件失败: {str(parse_err)}")
+                st.error(f"❌ 解析文件失败: {str(parse_err)}")
                 import traceback
-                with st.expander("错误详情"):
+                with st.expander("🔍 错误详情"):
                     st.code(traceback.format_exc())
 
     # ---------- Tab 2: 手动填写 ----------
@@ -197,13 +197,13 @@ def render_test_case_importer_tab(
 
         btn_col1, btn_col2, _ = st.columns([1, 1, 4])
         with btn_col1:
-            if st.button("添加一行", key="manual_add_row"):
+            if st.button("➕ 添加一行", key="manual_add_row"):
                 st.session_state.manual_cases.append(
                     {"Action": "", "Data": "", "Expected Result": ""}
                 )
                 st.rerun()
         with btn_col2:
-            if st.button("清空所有行", key="manual_clear_rows"):
+            if st.button("🗑️ 清空所有行", key="manual_clear_rows"):
                 st.session_state.manual_cases = [{"Action": "", "Data": "", "Expected Result": ""}]
                 st.rerun()
 
@@ -242,7 +242,7 @@ def render_test_case_importer_tab(
             with row_cols[3]:
                 if row_idx == 0:
                     st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-                if st.button("X", key=f"manual_del_{row_idx}",
+                if st.button("✕", key=f"manual_del_{row_idx}",
                              help="删除此行",
                              disabled=len(st.session_state.manual_cases) <= 1):
                     rows_to_delete.append(row_idx)
@@ -264,13 +264,13 @@ def render_test_case_importer_tab(
         if valid_manual:
             df_manual = pd.DataFrame(valid_manual)[["Action", "Data", "Expected Result"]]
             df_manual = df_manual.reset_index(drop=True)
-            st.success(f"已填写 **{len(df_manual)}** 条有效 Test Cases（Action 不为空）")
-            if st.button("使用手动填写的数据", key="manual_use_data", type="secondary"):
+            st.success(f"✅ 已填写 **{len(df_manual)}** 条有效 Test Cases（Action 不为空）")
+            if st.button("📋 使用手动填写的数据", key="manual_use_data", type="secondary"):
                 st.session_state.manual_cases_confirmed = df_manual.to_dict("records")
                 st.session_state.df_cases = df_manual
-                st.success("已确认使用手动填写的数据，请点击下方「开始导入」")
+                st.success("✅ 已确认使用手动填写的数据，请点击下方「开始导入」")
         else:
-            st.info("请至少填写一行 Action 和 Expected Result")
+            st.info("💡 请至少填写一行 Action 和 Expected Result")
 
         if df_cases is None and st.session_state.get("manual_cases_confirmed"):
             df_manual_confirmed = pd.DataFrame(st.session_state.manual_cases_confirmed)
@@ -294,9 +294,9 @@ def render_test_case_importer_tab(
 
         col_parse, col_clear = st.columns([1, 1])
         with col_parse:
-            parse_btn = st.button("解析内容", type="primary", key="parse_clipboard_btn")
+            parse_btn = st.button("🔍 解析内容", type="primary", key="parse_clipboard_btn")
         with col_clear:
-            if st.button("清空", key="clear_clipboard_btn"):
+            if st.button("🗑️ 清空", key="clear_clipboard_btn"):
                 st.session_state.clipboard_parsed_df = None
                 if "clipboard_input" in st.session_state:
                     del st.session_state["clipboard_input"]
@@ -306,7 +306,7 @@ def render_test_case_importer_tab(
             try:
                 lines = [l for l in clipboard_text.strip().split('\n') if l.strip()]
                 if len(lines) < 2:
-                    st.error("数据少于两行（需要表头 + 至少一行数据）")
+                    st.error("❌ 数据少于两行（需要表头 + 至少一行数据）")
                 else:
                     headers = lines[0].split('\t')
                     headers = [h.strip() for h in headers]
@@ -323,7 +323,7 @@ def render_test_case_importer_tab(
 
                     mapped_headers = [col_map.get(h, h) for h in headers]
                     if "Action" not in mapped_headers or "Expected Result" not in mapped_headers:
-                        st.error(f"无法识别必要的列（Action / Expected Result）。当前列头：{headers}")
+                        st.error(f"❌ 无法识别必要的列（Action / Expected Result）。当前列头：{headers}")
                     else:
                         data = []
                         for line in lines[1:]:
@@ -336,14 +336,14 @@ def render_test_case_importer_tab(
                                 data.append(row)
 
                         if not data:
-                            st.warning("没有有效的 Test Case 数据（Action 列为空）")
+                            st.warning("⚠️ 没有有效的 Test Case 数据（Action 列为空）")
                         else:
                             df_clip = pd.DataFrame(data)
                             df_clip = df_clip.rename(columns=col_map)
                             df_clip = df_clip[["Action", "Data", "Expected Result"]]
                             df_clip = df_clip.reset_index(drop=True)
 
-                            st.success(f"解析成功，共 **{len(df_clip)}** 条 Test Cases")
+                            st.success(f"✅ 解析成功，共 **{len(df_clip)}** 条 Test Cases")
                             preview_df_clip = df_clip.copy()
                             preview_df_clip.index = preview_df_clip.index + 1
                             preview_df_clip.index.name = "#"
@@ -353,8 +353,8 @@ def render_test_case_importer_tab(
                             df_cases = df_clip
 
             except Exception as parse_err:
-                st.error(f"解析失败: {str(parse_err)}")
-                with st.expander("错误详情"):
+                st.error(f"❌ 解析失败: {str(parse_err)}")
+                with st.expander("🔍 错误详情"):
                     st.code(traceback.format_exc())
 
         if df_cases is None and st.session_state.get("clipboard_parsed_df") is not None:
@@ -363,9 +363,9 @@ def render_test_case_importer_tab(
     # ===== 区域 C：预览 + 导入 =====
     if df_cases is not None and not df_cases.empty:
         st.markdown("---")
-        st.subheader("开始导入")
+        st.subheader("🚀 开始导入")
 
-        with st.expander(f"待导入数据预览（共 {len(df_cases)} 条）", expanded=False):
+        with st.expander(f"👁️ 待导入数据预览（共 {len(df_cases)} 条）", expanded=False):
             preview_df2 = df_cases[["Action", "Data", "Expected Result"]].copy()
             preview_df2.index = preview_df2.index + 1
             preview_df2.index.name = "#"
@@ -376,21 +376,21 @@ def render_test_case_importer_tab(
 
         import_ready = bool(xray_id and xray_secret and related_ticket.strip())
         if not import_ready:
-            st.warning("请确保填写了 Xray Client ID、Client Secret 以及 Related Ticket")
+            st.warning("⚠️ 请确保填写了 Xray Client ID、Client Secret 以及 Related Ticket")
 
-        if st.button("开始导入", type="primary",
+        if st.button("🚀 开始导入", type="primary",
                      disabled=not import_ready, key="import_start_btn"):
             progress_bar = st.progress(0, text="准备中...")
             status_area = st.empty()
 
             try:
                 # ---- Step 1: 获取 Xray Token ----
-                status_area.info("Step 1/4 -- 获取 Xray 鉴权 Token...")
+                status_area.info("🔑 Step 1/4 — 获取 Xray 鉴权 Token...")
                 progress_bar.progress(5, text="获取 Xray Token...")
                 xray_token = authenticate_xray(xray_id, xray_secret)
 
                 # ---- Step 2: 构建 payload ----
-                status_area.info("Step 2/4 -- 构建 Test Case 数据...")
+                status_area.info("📝 Step 2/4 — 构建 Test Case 数据...")
                 progress_bar.progress(15, text="构建数据...")
                 tests_payload = build_tests_payload(
                     df_cases,
@@ -403,7 +403,7 @@ def render_test_case_importer_tab(
 
                 # ---- Step 3: 批量提交 + 轮询 ----
                 status_area.info(
-                    f"Step 3/4 -- 提交 {len(tests_payload)} 条 Test Cases 到 Xray..."
+                    f"📤 Step 3/4 — 提交 {len(tests_payload)} 条 Test Cases 到 Xray..."
                 )
                 progress_bar.progress(25, text="提交导入任务...")
 
@@ -413,7 +413,7 @@ def render_test_case_importer_tab(
                     def poll_progress_cb(poll_count, max_polls, msg):
                         poll_pct = 25 + int((poll_count / max_polls) * 45)
                         progress_bar.progress(poll_pct, text=msg)
-                        status_area.info(f"Step 3/4 -- {msg}")
+                        status_area.info(f"⏳ Step 3/4 — {msg}")
 
                     created_keys = poll_job_status(
                         xray_token, job_id, progress_cb=poll_progress_cb
@@ -432,7 +432,7 @@ def render_test_case_importer_tab(
 
                 if created_keys and related_ticket_clean:
                     status_area.info(
-                        f"Step 4/4 -- 查询 {related_ticket_clean} 类型并建立关联..."
+                        f"🔗 Step 4/4 — 查询 {related_ticket_clean} 类型并建立关联..."
                     )
                     jira_headers = build_jira_auth_headers(config_email, api_token)
                     jira_headers["Accept"] = "application/json"
@@ -445,7 +445,7 @@ def render_test_case_importer_tab(
                     xray_warning = ""  # 默认无警告
                     if is_test_set and numeric_id:
                         status_area.info(
-                            f"Step 4/4 -- 通过 Xray GraphQL 加入 Test Set "
+                            f"🔗 Step 4/4 — 通过 Xray GraphQL 加入 Test Set "
                             f"{related_ticket_clean}..."
                         )
                         progress_bar.progress(75, text="查询 Test Case IDs...")
@@ -464,10 +464,10 @@ def render_test_case_importer_tab(
                                 # 计算重复数量（总数 - 新增数 = 重复数）
                                 if xray_warning:
                                     duplicate_count = len(test_numeric_ids) - len(link_successes)
-                                    st.warning(f"{xray_warning}（{duplicate_count} 个已存在于 Test Set）")
+                                    st.warning(f"⚠️ {xray_warning}（{duplicate_count} 个已存在于 Test Set）")
                             except Exception as xray_err:
                                 # Xray API 调用失败，降级到 issueLink
-                                st.warning(f"Xray API 调用失败（{xray_err}），改用 Jira issueLink 建立关联...")
+                                st.warning(f"⚠️ Xray API 调用失败（{xray_err}），改用 Jira issueLink 建立关联...")
                                 link_successes, link_failures = link_tests_to_story(
                                     base_url, jira_headers, created_keys,
                                     related_ticket_clean
@@ -475,7 +475,7 @@ def render_test_case_importer_tab(
                         else:
                             # Xray API 无法获取 Test Case IDs，降级到 issueLink
                             status_area.info(
-                                f"Xray API 查询失败，改用 Jira issueLink 建立关联..."
+                                f"⚠️ Xray API 查询失败，改用 Jira issueLink 建立关联..."
                             )
                             for i, test_key in enumerate(created_keys):
                                 link_pct = 70 + int(((i + 1) / len(created_keys)) * 25)
@@ -489,7 +489,7 @@ def render_test_case_importer_tab(
                             )
                     else:
                         status_area.info(
-                            f"Step 4/4 -- 通过 Jira issueLink 建立 is tested by 关联..."
+                            f"🔗 Step 4/4 — 通过 Jira issueLink 建立 is tested by 关联..."
                         )
                         for i, test_key in enumerate(created_keys):
                             link_pct = 70 + int(((i + 1) / len(created_keys)) * 25)
@@ -502,25 +502,25 @@ def render_test_case_importer_tab(
                             related_ticket_clean
                         )
 
-                progress_bar.progress(100, text="全部完成！")
+                progress_bar.progress(100, text="✅ 全部完成！")
                 status_area.empty()
 
                 # ---- 展示导入结果 ----
                 st.markdown("---")
-                st.subheader("导入结果")
+                st.subheader("📊 导入结果")
 
                 total = len(tests_payload)
                 imported = len(created_keys)
                 linked = len(link_successes)
 
                 result_c1, result_c2, result_c3 = st.columns(3)
-                result_c1.metric("提交数量", total)
-                result_c2.metric("成功创建", imported)
-                result_c3.metric("成功关联", linked)
+                result_c1.metric("📤 提交数量", total)
+                result_c2.metric("✅ 成功创建", imported)
+                result_c3.metric("🔗 成功关联", linked)
 
                 if created_keys:
                     with st.expander(
-                            f"已创建的 Test Cases（{len(created_keys)} 条）",
+                            f"✅ 已创建的 Test Cases（{len(created_keys)} 条）",
                             expanded=True):
                         for k in created_keys:
                             st.markdown(f"- [{k}]({base_url}/browse/{k})")
@@ -529,17 +529,17 @@ def render_test_case_importer_tab(
                     if link_successes:
                         if is_test_set:
                             st.success(
-                                f"已通过 Xray GraphQL 将 {len(link_successes)} 个 "
+                                f"🔗 已通过 Xray GraphQL 将 {len(link_successes)} 个 "
                                 f"Test Cases 添加到 Test Set **{related_ticket_clean}**"
                             )
                         else:
                             st.success(
-                                f"已成功将 {len(link_successes)} 个 Test Cases 与 "
+                                f"🔗 已成功将 {len(link_successes)} 个 Test Cases 与 "
                                 f"**{related_ticket_clean}** 建立 is tested by 关联"
                             )
                     if link_failures:
                         with st.expander(
-                                f"{len(link_failures)} 个关联失败", expanded=False):
+                                f"⚠️ {len(link_failures)} 个关联失败", expanded=False):
                             for lf in link_failures:
                                 st.write(f"- **{lf['key']}**: {lf['error']}")
 
@@ -554,19 +554,19 @@ def render_test_case_importer_tab(
                 st.session_state.pop("df_cases", None)
 
             except XrayAuthError as e:
-                status_area.error(f"{str(e)}")
+                status_area.error(f"❌ {str(e)}")
             except XrayImportError as e:
-                status_area.error(f"{str(e)}")
-                with st.expander("错误详情"):
+                status_area.error(f"❌ {str(e)}")
+                with st.expander("🔍 错误详情"):
                     st.code(str(e))
             except XrayJobFailedError as e:
-                status_area.error(f"Xray 导入任务失败: {str(e)}")
-                with st.expander("错误详情"):
-                    st.json(str(e))
+                status_area.error(f"❌ {str(e)}")
+                with st.expander("🔍 错误详情"):
+                    st.text(str(e))
             except XrayJobTimeoutError as e:
-                status_area.error(f"轮询超时: {str(e)}")
+                status_area.error(f"❌ 轮询超时: {str(e)}")
             except Exception as e:
-                status_area.error(f"导入过程发生错误: {str(e)}")
+                status_area.error(f"❌ 导入过程发生错误: {str(e)}")
                 import traceback
-                with st.expander("错误详情"):
+                with st.expander("🔍 错误详情"):
                     st.code(traceback.format_exc())

@@ -72,7 +72,7 @@ def build_tests_payload(
 
     Args:
         df_cases: 包含 Action / Data / Expected Result 列的 DataFrame
-        selected_sp_team: SP Team 名称（如 "Team-Epsilon"）
+        selected_sp_team: SP Team 名称（如 "Mermaid"）
         selected_priority: Priority（如 "Medium"）
         title_mode: "使用 Action 列作为 Title（推荐）" 或 "自定义统一 Title"
         custom_title: 当 title_mode 为后者时的统一标题
@@ -96,10 +96,10 @@ def build_tests_payload(
         tests_payload.append({
             "fields": {
                 "summary": title,
-                "project": {"key": "DEMO"},
+                "project": {"key": "SP"},
                 "issuetype": {"name": "Test"},
                 "priority": {"name": selected_priority},
-                "customfield_10002": sp_team_field_value,
+                "customfield_12628": sp_team_field_value,
             },
             "xray_test_type": "Manual",
             "steps": [{
@@ -187,7 +187,7 @@ def poll_job_status(
     Args:
         xray_token: Xray Bearer Token
         job_id: submit_tests_bulk 返回的 job_id
-        max_polls: 最大轮询次数（默认 30 x 2s = 60s）
+        max_polls: 最大轮询次数（默认 30 × 2s = 60s）
         poll_interval: 轮询间隔（秒）
         progress_cb: 回调函数，签名 (poll_count, max_polls, status_msg)
         http_client: 可注入 mock

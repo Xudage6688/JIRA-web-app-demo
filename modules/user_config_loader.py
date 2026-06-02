@@ -6,23 +6,18 @@
 import base64
 import json
 import os
-import threading
+import requests
 from typing import Dict, Optional, List
 from requests.auth import HTTPBasicAuth
-from modules.logging_config import config_logger
-
-# 模块级单例缓存（线程安全）
-_loader_instance: Optional["UserConfigLoader"] = None
-_loader_lock = threading.Lock()
 
 class UserConfigLoader:
     """多用户配置管理器"""
-
+    
     def __init__(self, config_file: str = "config/users_config.json"):
         self.config_file = config_file
         self._config = None
         self._load_config()
-
+    
     def _load_config(self):
         """加载配置文件"""
         try:
@@ -30,38 +25,38 @@ class UserConfigLoader:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     self._config = json.load(f)
             else:
-                config_logger.warning(f"配置文件不存在 {self.config_file}")
+                print(f"警告: 配置文件不存在 {self.config_file}")
                 self._config = {"users": {}, "default_user": None}
         except Exception as e:
-            config_logger.error(f"加载配置失败: {e}")
+            print(f"加载配置失败: {e}")
             self._config = {"users": {}, "default_user": None}
-
+    
     def get_users_list(self) -> List[str]:
         """获取所有用户名列表"""
         return list(self._config.get("users", {}).keys())
-
+    
     def get_default_user(self) -> Optional[str]:
         """获取默认用户"""
         return self._config.get("default_user")
-
+    
     def get_user_config(self, username: str) -> Optional[Dict]:
         """获取指定用户的完整配置"""
         return self._config.get("users", {}).get(username)
-
+    
     def get_jira_config(self, username: str) -> Optional[Dict]:
         """获取指定用户的JIRA配置"""
         user_config = self.get_user_config(username)
         if user_config:
             return user_config.get("jira")
         return None
-
+    
     def get_circleci_config(self, username: str) -> Optional[Dict]:
         """获取指定用户的CircleCI配置"""
         user_config = self.get_user_config(username)
         if user_config:
             return user_config.get("circleci")
         return None
-
+    
     def get_argocd_config(self, username: str) -> Optional[Dict]:
         """获取指定用户的ArgoCD配置"""
         user_config = self.get_user_config(username)
@@ -75,14 +70,14 @@ class UserConfigLoader:
         if user_config:
             return user_config.get("jenkins")
         return None
-
+    
     def get_user_email(self, username: str) -> Optional[str]:
         """获取用户邮箱"""
         user_config = self.get_user_config(username)
         if user_config:
             return user_config.get("email")
         return None
-
+    
     def get_user_display_name(self, username: str) -> Optional[str]:
         """获取用户显示名称"""
         user_config = self.get_user_config(username)
@@ -90,24 +85,28 @@ class UserConfigLoader:
             return user_config.get("display_name", username)
         return username
 
+    def get_cookies_password(self) -> Optional[str]:
+        """获取加密 Cookie 的密码"""
+        return self._config.get("cookies", {}).get("password")
+
+    def set_cookies_password(self, password: str) -> bool:
+        """设置加密 Cookie 的密码并保存到配置文件"""
+        try:
+            if "cookies" not in self._config:
+                self._config["cookies"] = {}
+            self._config["cookies"]["password"] = password
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(self._config, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"保存 cookies 密码失败: {e}")
+            return False
+
 def get_user_config_loader() -> UserConfigLoader:
-    """获取配置加载器实例（线程安全单例，避免重复读取文件）"""
-    global _loader_instance
-    if _loader_instance is None:
-        with _loader_lock:
-            # 双重检查锁定
-            if _loader_instance is None:
-                _loader_instance = UserConfigLoader()
-    return _loader_instance
+    """每次调用都从磁盘重新读取配置，确保修改文件后立即生效"""
+    return UserConfigLoader()
 
-def reload_config() -> UserConfigLoader:
-    """强制重新加载配置文件（线程安全）"""
-    global _loader_instance
-    with _loader_lock:
-        _loader_instance = UserConfigLoader()
-    return _loader_instance
-
-# 便捷函数（使用单例，避免重复文件读取）
+# 便捷函数
 def get_users_list() -> List[str]:
     """获取所有用户列表"""
     return get_user_config_loader().get_users_list()
@@ -155,3 +154,58 @@ def build_circleci_headers(api_token: str) -> Dict[str, str]:
         'Content-Type': 'application/json',
         'Accept': 'application/json'
     }
+
+
+def parse_api_error_message(
+    response: requests.Response,
+    max_length: int = 200
+) -> str:
+    """解析 API 错误响应消息（供所有 API 操作统一复用）
+
+    Args:
+        response: requests.Response 对象
+        max_length: 返回消息的最大长度
+
+    Returns:
+        错误消息字符串
+    """
+    try:
+        error_data = response.json()
+        return error_data.get('message', response.text[:max_length])
+    except (requests.exceptions.JSONDecodeError, ValueError):
+        return response.text[:max_length] if response.text else f"HTTP {response.status_code}"
+
+
+def sanitize_error_message(error_msg: str) -> str:
+    """Remove sensitive information from error messages before displaying to users.
+
+    This function redacts API tokens, passwords, auth headers, and other
+    sensitive data that may be leaked in error messages.
+
+    Args:
+        error_msg: The original error message that may contain sensitive data.
+
+    Returns:
+        Sanitized error message with sensitive data redacted.
+    """
+    import re
+
+    # Pattern for common API tokens/keys (redacts them)
+    patterns = [
+        (r'Bearer [a-zA-Z0-9_-]+', 'Bearer ***'),
+        (r'token["\']?\s*[:=]\s*["\']?[a-zA-Z0-9_-]+', 'token=***'),
+        (r'api[_-]?key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9_-]+', 'api_key=***'),
+        (r'password["\']?\s*[:=]\s*["\']?[^\s,}\]]+', 'password=***'),
+        (r'Basic [a-zA-Z0-9+/=]+', 'Basic ***'),
+        (r'Circle-Token [a-zA-Z0-9_-]+', 'Circle-Token ***'),
+        # GitHub PATs
+        (r'(ghp|github_pat|gho)_[a-zA-Z0-9_-]+', '[GITHUB_TOKEN]***'),
+        # Jira API tokens
+        (r'jira[_-]?token["\']?\s*[:=]\s*["\']?[a-zA-Z0-9_-]+', 'jira_token=***'),
+    ]
+
+    result = error_msg
+    for pattern, replacement in patterns:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+    return result
