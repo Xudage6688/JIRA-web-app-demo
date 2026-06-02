@@ -13,9 +13,9 @@ import requests
 
 
 API_ENDPOINTS: Dict[str, str] = {
-  "DEV": "https://api-gateway.qcore-dev.qima.com/exchange-service/v1.0/pre-payment/links",
-  "PP": "https://api-gateway.qcore-preprod.qima.com/exchange-service/v1.0/pre-payment/links",
-  "PROD": "https://api-gateway.qima.com/exchange-service/v1.0/pre-payment/links",
+  "DEV": "https://api-gateway.qcore-dev.example.com/exchange-service/v1.0/pre-payment/links",
+  "PP": "https://api-gateway.qcore-preprod.example.com/exchange-service/v1.0/pre-payment/links",
+  "PROD": "https://api-gateway.example.com/exchange-service/v1.0/pre-payment/links",
 }
 
 DEFAULT_HEADERS: Dict[str, str] = {
@@ -27,10 +27,10 @@ DEFAULT_HEADERS: Dict[str, str] = {
 }
 
 DEFAULT_FIELDS: Dict[str, Any] = {
-  "companyName": "QIMA_DAISY_LIU_CLIENT",
-  "contactEmail": "daisy.liu@qima.com",
-  "contactName": "Daisy Test",
-  "bu": "qima",
+  "companyName": "Example_Test_Client",
+  "contactEmail": "test@example.com",
+  "contactName": "Test User",
+  "bu": "your-org",
   "currency": "USD",
   "processingFee": 0,
   "sourceSystem": "NS",

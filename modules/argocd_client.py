@@ -25,17 +25,17 @@ class ArgoCDClient:
     # 支持的环境配置
     SUPPORTED_ENVIRONMENTS = {
         'preprod': {
-            'server': 'https://argocd.qcore-preprod.qima.com',
+            'server': 'https://argocd.qcore-preprod.example.com',
             'app_prefix': 'preprod-',
             'app_suffix': '--qcore-preprod'
         },
         'staging': {
-            'server': 'https://argocd.qcore-preprod.qima.com',
+            'server': 'https://argocd.qcore-preprod.example.com',
             'app_prefix': 'staging-',
             'app_suffix': '--qcore-staging'
         },
         'prod': {
-            'server': 'https://argocd.qcore-prod.qima.com',
+            'server': 'https://argocd.qcore-prod.example.com',
             'app_prefix': 'prod-',
             'app_suffix': '--qcore-prod'
         }

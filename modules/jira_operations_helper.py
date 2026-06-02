@@ -72,7 +72,7 @@ class JiraOperationsClient:
     初始化 Jira 客户端
     
     Args:
-      base_url: Jira 实例 URL (e.g., https://qima.atlassian.net)
+      base_url: Jira 实例 URL (e.g., https://your-jira.atlassian.net)
       email: 用户邮箱
       api_token: Jira API Token
     """

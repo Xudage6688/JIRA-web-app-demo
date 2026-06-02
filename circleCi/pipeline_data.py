@@ -333,7 +333,7 @@ def get_preprod_approval_info(
 
         # 如果提供了项目名称，尝试匹配相关的 approval
         if project_name:
-            # 从 project_slug 中提取项目名称（例如：github/asiainspection/aca-new -> aca-new）
+            # 从 project_slug 中提取项目名称（例如：github/your-org/your-repo -> your-repo）
             if '/' in project_name:
                 project_name = project_name.split('/')[-1]
 

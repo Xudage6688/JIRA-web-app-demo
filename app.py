@@ -431,7 +431,7 @@ with tab3:
     **Q: 如何报告问题？**
     
     A: 请通过以下方式反馈：
-    - 📧 Email: daisy.liu@qima.com
+    - 📧 Email: demo@example.com
     - 💬 内部协作平台
     - 📝 详细描述问题和截图
     
@@ -462,7 +462,7 @@ with st.expander("📋 版本更新日志"):
 
     #### 🎉 重大更新
     - ✅ **GitHub 集成**：改用 GitHub 仓库直接读取镜像配置
-    - ✅ **数据源切换**：从 ArgoCD API 切换到 qcore-apps-descriptors 仓库
+    - ✅ **数据源切换**：从 ArgoCD API 切换到 your-org/your-repo 仓库
     - ✅ **工具重命名**：ArgoCD 镜像查询工具 → Services Images Extractor
     - ✅ **Token 可选**：GitHub Token 可选，无 Token 也能使用（公共仓库模式）
     - ✅ **多用户配置**：GitHub Token 统一到 users_config.json 管理
@@ -546,11 +546,11 @@ st.markdown("""
 <div style="text-align: center; color: #666; padding: 2rem 0;">
     <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">🛠️ DevOps 工具集 v3.0.0</p>
     <p style="margin-bottom: 0.5rem;">Powered by <strong>Streamlit</strong> | Built with ❤️ by DevOps Team</p>
-    <p style="font-size: 0.9rem;">👩‍💻 维护者: Daisy Liu | 📧 daisy.liu@qima.com</p>
+    <p style="font-size: 0.9rem;">👩‍💻 维护者: Open Source Team | 📧 demo@example.com</p>
     <p style="font-size: 0.8rem; margin-top: 1rem; color: #999;">
-        © 2026 QIMA. All rights reserved. | 
-        <a href="https://github.com/Daisy-liu822/jiraWeb" target="_blank" style="color: #667eea;">GitHub</a> | 
-        <a href="mailto:daisy.liu@qima.com" style="color: #667eea;">Support</a>
+        © 2026 DevOps Team. All rights reserved. |
+        <a href="https://github.com/your-org/your-repo" target="_blank" style="color: #667eea;">GitHub</a> |
+        <a href="mailto:demo@example.com" style="color: #667eea;">Support</a>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -568,10 +568,10 @@ with st.sidebar:
     st.markdown("### 📌 快速链接")
     
     st.markdown("""
-    - [📖 使用文档](https://github.com/Daisy-liu822/jiraWeb)
-    - [🐛 问题反馈](mailto:daisy.liu@qima.com)
-    - [💡 功能建议](mailto:daisy.liu@qima.com)
-    - [🔐 安全政策](https://github.com/Daisy-liu822/jiraWeb)
+    - [📖 使用文档](https://github.com/your-org/your-repo)
+    - [🐛 问题反馈](mailto:demo@example.com)
+    - [💡 功能建议](mailto:demo@example.com)
+    - [🔐 安全政策](https://github.com/your-org/your-repo)
     """)
     
     st.markdown("---")

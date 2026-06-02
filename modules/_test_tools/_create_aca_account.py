@@ -10,8 +10,8 @@ import requests
 
 
 API_ENDPOINTS: Dict[str, str] = {
-  "DEV": "http://devservices.qima.com/customer-service/customer-legacy/create-new-account",
-  "PP": "https://api-gateway.qcore-preprod.qima.com/customer-service/customer-legacy/create-new-account",
+  "DEV": "http://devservices.example.com/customer-service/customer-legacy/create-new-account",
+  "PP": "https://api-gateway.qcore-preprod.example.com/customer-service/customer-legacy/create-new-account",
 }
 
 
@@ -29,7 +29,7 @@ DEFAULT_FIELDS: Dict[str, str] = {
   "post-code": "518001",
   "BU": "AI",
   "billing-salutation": "Mr",
-  "billing-email": "qateam@qima.com",
+  "billing-email": "qateam@example.com",
   "billing-contact-name": "QA",
   "position": "QA",
   "salutation": "Mr",

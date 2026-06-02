@@ -16,7 +16,7 @@ class SheinOrderFlow:
     self.user_id = "369A2C205AA54300A84006CB096EF95B"
     self.lt_ref_num: Optional[str] = None
     self.lt_ref_id: Optional[str] = None
-    self.base_url = "https://api-gateway.qcore-preprod.qima.com"
+    self.base_url = "https://api-gateway.qcore-preprod.example.com"
 
   def log(self, message: str) -> str:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

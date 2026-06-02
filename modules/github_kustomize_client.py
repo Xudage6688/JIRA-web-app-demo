@@ -1,6 +1,6 @@
 """
 GitHub Kustomize 客户端模块
-从 qcore-apps-descriptors 仓库读取 kustomization.yml 获取镜像信息
+从 your-org/your-repo 仓库读取 kustomization.yml 获取镜像信息
 """
 
 import requests
@@ -17,8 +17,8 @@ class GitHubKustomizeClient:
     """GitHub Kustomize 客户端类"""
     
     # GitHub 仓库配置
-    REPO_OWNER = "asiainspection"
-    REPO_NAME = "qcore-apps-descriptors"
+    REPO_OWNER = "your-org"
+    REPO_NAME = "your-repo"
     REPO_BRANCH = "main"
     BASE_PATH = "kustomize/overlays"
     
@@ -327,7 +327,7 @@ class GitHubKustomizeClient:
                     if "文件不存在" in err or "404" in err:
                         results['warnings'].append(
                             f"⚠️ 服务 '{svc}' 在 {self.env_config['display_name']} "
-                            f"环境的 qcore-apps-descriptors 仓库中不存在，请检查服务名称是否正确"
+                            f"环境的 your-org/your-repo 仓库中不存在，请检查服务名称是否正确"
                         )
                 else:
                     # images 结构: {service_name: {'image_tag': str, 'last_update': str}}
