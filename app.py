@@ -1,4 +1,4 @@
-﻿"""
+"""
 DevOps 工具集主入口
 多页面 Streamlit 应用的 Landing Page
 """
@@ -209,8 +209,8 @@ with col5:
         - ✅ **结果汇总** - 清晰展示成功/失败
         
         **支持服务：**
-        - 🔹 demo-public-api
-        - 🔹 demo-psi-service
+        - 🔹 pp-public-api
+        - 🔹 pp-psi-service
         """)
 
         st.markdown("")
@@ -431,7 +431,7 @@ with tab3:
     **Q: 如何报告问题？**
     
     A: 请通过以下方式反馈：
-    - 📧 Email: demo@example.com
+    - 📧 Email: daisy.liu@qima.com
     - 💬 内部协作平台
     - 📝 详细描述问题和截图
     
@@ -546,11 +546,11 @@ st.markdown("""
 <div style="text-align: center; color: #666; padding: 2rem 0;">
     <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">🛠️ DevOps 工具集 v3.0.0</p>
     <p style="margin-bottom: 0.5rem;">Powered by <strong>Streamlit</strong> | Built with ❤️ by DevOps Team</p>
-    <p style="font-size: 0.9rem;">👩‍💻 维护者: Demo Developer | 📧 demo@example.com</p>
+    <p style="font-size: 0.9rem;">👩‍💻 维护者: Daisy Liu | 📧 daisy.liu@qima.com</p>
     <p style="font-size: 0.8rem; margin-top: 1rem; color: #999;">
-        © 2026 Demo Developer. All rights reserved. | 
-        <a href="https://github.com/Demo User-liu822/jiraWeb" target="_blank" style="color: #667eea;">GitHub</a> | 
-        <a href="mailto:demo@example.com" style="color: #667eea;">Support</a>
+        © 2026 QIMA. All rights reserved. | 
+        <a href="https://github.com/Daisy-liu822/jiraWeb" target="_blank" style="color: #667eea;">GitHub</a> | 
+        <a href="mailto:daisy.liu@qima.com" style="color: #667eea;">Support</a>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -568,10 +568,10 @@ with st.sidebar:
     st.markdown("### 📌 快速链接")
     
     st.markdown("""
-    - [📖 使用文档](https://github.com/Demo User-liu822/jiraWeb)
-    - [🐛 问题反馈](mailto:demo@example.com)
-    - [💡 功能建议](mailto:demo@example.com)
-    - [🔐 安全政策](https://github.com/Demo User-liu822/jiraWeb)
+    - [📖 使用文档](https://github.com/Daisy-liu822/jiraWeb)
+    - [🐛 问题反馈](mailto:daisy.liu@qima.com)
+    - [💡 功能建议](mailto:daisy.liu@qima.com)
+    - [🔐 安全政策](https://github.com/Daisy-liu822/jiraWeb)
     """)
     
     st.markdown("---")
