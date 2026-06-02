@@ -1,0 +1,30 @@
+{
+  "users": {
+    "demo_user": {
+      "display_name": "演示用户",
+      "email": "demo@example.com",
+      "jira": {
+        "api_token": "# YOUR_JIRA_TOKEN",
+        "base_url": "https://your-jira.atlassian.net",
+        "filter_id": "12345",
+        "field_id": "customfield_xxxxx"
+      },
+      "circleci": {
+        "api_token": "# YOUR_CIRCLECI_TOKEN",
+        "vcs_type": "github",
+        "organization": "your-org",
+        "default_project": "your-project",
+        "default_branch": "main"
+      },
+      "github": {
+        "token": "# YOUR_GITHUB_TOKEN"
+      },
+      "jenkins": {
+        "username": "# YOUR_JENKINS_USER",
+        "api_token": "# YOUR_JENKINS_TOKEN",
+        "jenkins_url": "https://jenkins.example.com"
+      }
+    }
+  },
+  "default_user": "demo_user"
+}

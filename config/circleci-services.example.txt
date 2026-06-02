@@ -1,7 +1,2 @@
-demo-service-a
-demo-service-b
-demo-service-c
-demo-api-service
-demo-web-portal
-demo-auth-service
-demo-notification-service
+pp-public-api
+pp-psi-service
