@@ -9,8 +9,8 @@ def safe_print(msg):
     """安全地打印消息，避免stderr关闭问题"""
     try:
         print(msg)
-    except:
-        pass  # 静默忽略打印错误
+    except Exception:
+        pass  # Streamlit 环境下 print 可能失败，保持静默
 
 def trigger_circleci_pipeline(project_slug=None, branch=None, api_token=None):
     """
@@ -216,7 +216,7 @@ def show_current_config():
     safe_print("=" * 50)
     safe_print(f"项目Slug: {PROJECT_SLUG}")
     safe_print(f"分支名称: {BRANCH}")
-    safe_print(f"API Token: {get_headers()['Circle-Token'][:20]}...")
+    safe_print(f"API Token: ***(已隐藏)***")
     safe_print("=" * 50)
 
 def main():
