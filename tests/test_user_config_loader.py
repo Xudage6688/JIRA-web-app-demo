@@ -17,7 +17,6 @@ sys.path.insert(0, str(project_root))
 from modules.user_config_loader import (
     UserConfigLoader,
     get_user_config_loader,
-    reload_config,
     get_users_list,
     get_default_user,
     get_jira_config,
@@ -26,7 +25,8 @@ from modules.user_config_loader import (
     get_jenkins_config,
     build_jira_auth_headers,
     build_jenkins_auth,
-    build_circleci_headers
+    build_circleci_headers,
+    sanitize_error_message
 )
 from requests.auth import HTTPBasicAuth
 
@@ -40,7 +40,7 @@ class TestUserConfigLoader:
         config_data = {
             "users": {
                 "user1": {
-                    "email": "demo@example.com",
+                    "email": "user1@example.com",
                     "display_name": "User One",
                     "jira": {"base_url": "https://jira.example.com", "api_token": "token1"},
                     "circleci": {"api_token": "circle1", "vcs_type": "github"},
@@ -48,7 +48,7 @@ class TestUserConfigLoader:
                     "jenkins": {"url": "https://jenkins.example.com", "username": "jenkins1", "token": "jenkins1_token"}
                 },
                 "user2": {
-                    "email": "demo@example.com",
+                    "email": "user2@example.com",
                     "display_name": "User Two",
                     "jira": {"base_url": "https://jira.example.com", "api_token": "token2"}
                 }
@@ -112,7 +112,7 @@ class TestUserConfigLoader:
         loader = UserConfigLoader(temp_config_file)
         config = loader.get_user_config("user1")
         assert config is not None
-        assert config["email"] == "demo@example.com"
+        assert config["email"] == "user1@example.com"
 
     def test_get_user_config_nonexistent(self, temp_config_file):
         """获取不存在用户返回 None"""
@@ -133,7 +133,7 @@ class TestUserConfigLoader:
 
     def test_get_jira_config_user_without_jira(self):
         """用户无 Jira 配置返回 None"""
-        config_data = {"users": {"user3": {"email": "demo@example.com"}}}
+        config_data = {"users": {"user3": {"email": "user3@example.com"}}}
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             json.dump(config_data, f)
             temp_path = f.name
@@ -196,7 +196,7 @@ class TestUserConfigLoader:
     def test_get_user_email(self, temp_config_file):
         """获取用户邮箱"""
         loader = UserConfigLoader(temp_config_file)
-        assert loader.get_user_email("user1") == "demo@example.com"
+        assert loader.get_user_email("user1") == "user1@example.com"
 
     def test_get_user_email_nonexistent(self, temp_config_file):
         """不存在用户返回 None"""
@@ -210,7 +210,7 @@ class TestUserConfigLoader:
 
     def test_get_user_display_name_default_to_username(self):
         """无显示名称时返回用户名"""
-        config_data = {"users": {"user3": {"email": "demo@example.com"}}}
+        config_data = {"users": {"user3": {"email": "user3@example.com"}}}
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             json.dump(config_data, f)
             temp_path = f.name
@@ -276,21 +276,11 @@ class TestConvenienceFunctions:
             result = get_jenkins_config("user1")
             assert result == {"username": "jenkins"}
 
-    def test_get_user_config_loader_returns_same_instance(self):
-        """单例模式：多次调用返回同一实例"""
-        import modules.user_config_loader as module
-        module._loader_instance = None
-
+    def test_get_user_config_loader_returns_new_instance(self):
+        """每次调用返回新实例"""
         loader1 = get_user_config_loader()
         loader2 = get_user_config_loader()
-        # 同一实例（单例模式）
-        assert loader1 is loader2
-
-    def test_reload_config_returns_new_instance(self):
-        """reload_config 返回新实例"""
-        loader1 = get_user_config_loader()
-        loader2 = reload_config()
-        # 不同实例（强制重新加载）
+        # 不同实例（因为每次都重新读取文件）
         assert loader1 is not loader2
 
 
@@ -299,7 +289,7 @@ class TestBuildJiraAuthHeaders:
 
     def test_normal_case(self):
         """正常情况"""
-        headers = build_jira_auth_headers("demo@example.com", "api_token_123")
+        headers = build_jira_auth_headers("user@example.com", "api_token_123")
         assert headers['Authorization'].startswith('Basic ')
         assert headers['Content-Type'] == 'application/json'
 
@@ -310,18 +300,18 @@ class TestBuildJiraAuthHeaders:
 
     def test_empty_token(self):
         """空 token"""
-        headers = build_jira_auth_headers("demo@example.com", "")
+        headers = build_jira_auth_headers("user@example.com", "")
         assert headers['Authorization'].startswith('Basic ')
 
     def test_special_chars_in_token(self):
         """token 包含特殊字符"""
-        headers = build_jira_auth_headers("demo@example.com", "token:with:special@chars")
+        headers = build_jira_auth_headers("user@example.com", "token:with:special@chars")
         assert headers['Authorization'].startswith('Basic ')
 
     def test_base64_encoding_is_correct(self):
         """验证 Base64 编码正确"""
         import base64
-        email = "demo@example.com"
+        email = "test@example.com"
         token = "secret123"
         headers = build_jira_auth_headers(email, token)
 
@@ -391,3 +381,126 @@ class TestBuildCircleciHeaders:
         """空 token"""
         headers = build_circleci_headers("")
         assert headers['Circle-Token'] == ""
+
+
+class TestSanitizeErrorMessage:
+    """测试 sanitize_error_message 函数"""
+
+    def test_bearer_token_redacted(self):
+        """Bearer token should be redacted"""
+        result = sanitize_error_message("Failed to fetch: Bearer abc123xyz_token")
+        assert result == "Failed to fetch: Bearer ***"
+        assert "abc123xyz_token" not in result
+
+    def test_api_key_variations_redacted(self):
+        """API key variations should be redacted"""
+        # api_key
+        result = sanitize_error_message("Error: api_key=sk1234567890abcdef")
+        assert result == "Error: api_key=***"
+        # api-key
+        result = sanitize_error_message("Error: api-key=sk1234567890abcdef")
+        assert result == "Error: api_key=***"
+        # apiKey (camelCase)
+        result = sanitize_error_message("Error: apiKey=sk1234567890abcdef")
+        assert "sk1234567890abcdef" not in result
+
+    def test_token_key_redacted(self):
+        """token key should be redacted"""
+        result = sanitize_error_message("Auth failed: token=my_secret_token_here")
+        assert result == "Auth failed: token=***"
+        assert "my_secret_token_here" not in result
+
+    def test_password_redacted(self):
+        """password should be redacted"""
+        result = sanitize_error_message("Login failed: password=supersecret123")
+        assert result == "Login failed: password=***"
+        assert "supersecret123" not in result
+
+    def test_basic_auth_redacted(self):
+        """Basic auth header should be redacted"""
+        result = sanitize_error_message("Unauthorized: Basic dXNlcjpwYXNzMTIz")
+        assert result == "Unauthorized: Basic ***"
+        assert "dXNlcjpwYXNzMTIz" not in result
+
+    def test_circle_token_redacted(self):
+        """CircleCI token should be redacted"""
+        result = sanitize_error_message("CircleCI error: Circle-Token cci_token_abc123")
+        assert result == "CircleCI error: Circle-Token ***"
+        assert "cci_token_abc123" not in result
+
+    def test_multiple_sensitive_values_redacted(self):
+        """Multiple sensitive values in same message should all be redacted"""
+        msg = "Token=abc123, api_key=xyz789, Bearer auth123"
+        result = sanitize_error_message(msg)
+        # All sensitive values should be redacted
+        assert "abc123" not in result
+        assert "xyz789" not in result
+        assert "auth123" not in result
+        assert "***" in result
+
+    def test_no_sensitive_data_unchanged(self):
+        """Messages without sensitive data should be unchanged"""
+        msg = "Failed to connect to server"
+        result = sanitize_error_message(msg)
+        assert result == msg
+
+    def test_error_structure_preserved(self):
+        """Error message structure should be preserved after redaction"""
+        msg = "API Error: token=secret123 at endpoint https://api.example.com"
+        result = sanitize_error_message(msg)
+        # The structure should be preserved
+        assert "API Error:" in result
+        assert "endpoint" in result
+        assert "https://api.example.com" in result
+        # But token should be redacted
+        assert "secret123" not in result
+
+    def test_case_insensitive_matching(self):
+        """Pattern matching should be case insensitive"""
+        msg = "Error: TOKEN=my_token, API_KEY=my_key"
+        result = sanitize_error_message(msg)
+        assert "my_token" not in result
+        assert "my_key" not in result
+
+    def test_empty_string(self):
+        """Empty string should return empty string"""
+        result = sanitize_error_message("")
+        assert result == ""
+
+    def test_quoted_password(self):
+        """Quoted password values should be redacted"""
+        result = sanitize_error_message('Auth: password="secret123"')
+        assert "secret123" not in result
+        assert "password" in result
+
+    def test_github_pat_ghp_redacted(self):
+        """GitHub PAT starting with ghp_ should be redacted"""
+        result = sanitize_error_message("GitHub error: ghp_abc123xyz456def789")
+        assert result == "GitHub error: [GITHUB_TOKEN]***"
+        assert "abc123xyz456def789" not in result
+
+    def test_github_pat_github_pat_redacted(self):
+        """GitHub PAT starting with github_pat_ should be redacted"""
+        result = sanitize_error_message("Error: github_pat_abc123xyz456def789")
+        assert result == "Error: [GITHUB_TOKEN]***"
+        assert "abc123xyz456def789" not in result
+
+    def test_github_pat_gho_redacted(self):
+        """GitHub OAuth token starting with gho_ should be redacted"""
+        result = sanitize_error_message("Auth failed: gho_abc123xyz456def789")
+        assert result == "Auth failed: [GITHUB_TOKEN]***"
+        assert "abc123xyz456def789" not in result
+
+    def test_jira_token_variations_redacted(self):
+        """Jira token variations should be redacted"""
+        # jira_token
+        result = sanitize_error_message("Error: jira_token=abc123xyz_token")
+        assert result == "Error: jira_token=***"
+        assert "abc123xyz_token" not in result
+        # jira-token
+        result = sanitize_error_message("Error: jira-token=abc123xyz_token")
+        assert "jira-token" in result
+        assert "abc123xyz_token" not in result
+        # jiraToken
+        result = sanitize_error_message("Error: jiraToken=abc123xyz_token")
+        assert "abc123xyz_token" not in result

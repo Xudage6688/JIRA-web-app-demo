@@ -44,12 +44,12 @@ def mock_df():
 class TestBuildTestsPayload:
     def test_uses_action_as_title(self, mock_df):
         payload = build_tests_payload(
-            mock_df, "Team-Alpha", "Medium",
+            mock_df, "Mermaid", "Medium",
             "使用 Action 列作为 Title（推荐）", ""
         )
         assert len(payload) == 2
         assert payload[0]["fields"]["summary"] == "登录系统"
-        assert payload[0]["fields"]["project"] == {"key": "DEMO"}
+        assert payload[0]["fields"]["project"] == {"key": "SP"}
         assert payload[0]["fields"]["issuetype"] == {"name": "Test"}
         assert payload[0]["fields"]["priority"] == {"name": "Medium"}
         assert payload[0]["xray_test_type"] == "Manual"
@@ -58,7 +58,7 @@ class TestBuildTestsPayload:
 
     def test_uses_custom_title(self, mock_df):
         payload = build_tests_payload(
-            mock_df, "Team-Alpha", "High",
+            mock_df, "Mermaid", "High",
             "自定义统一 Title", "回归测试-登录模块"
         )
         assert payload[0]["fields"]["summary"] == "回归测试-登录模块"
@@ -66,21 +66,21 @@ class TestBuildTestsPayload:
 
     def test_empty_custom_title_falls_back_to_action(self, mock_df):
         payload = build_tests_payload(
-            mock_df, "Team-Alpha", "Low",
+            mock_df, "Mermaid", "Low",
             "自定义统一 Title", "   "
         )
         assert payload[0]["fields"]["summary"] == "登录系统"
 
-    def test_team_field(self, mock_df):
+    def test_sp_team_field(self, mock_df):
         payload = build_tests_payload(
-            mock_df, "Team-Alpha", "Critical",
+            mock_df, "QA-Team", "Critical",
             "使用 Action 列作为 Title（推荐）", ""
         )
-        assert payload[0]["fields"]["customfield_10002"] == {"value": "Team-Alpha"}
+        assert payload[0]["fields"]["customfield_12628"] == {"value": "QA-Team"}
 
     def test_empty_data_becomes_empty_string(self, mock_df):
         payload = build_tests_payload(
-            mock_df, "Team-Beta", "L",
+            mock_df, "M", "L",
             "使用 Action 列作为 Title（推荐）", ""
         )
         assert payload[1]["steps"][0]["data"] == ""
@@ -125,25 +125,25 @@ class TestSubmitTestsBulk:
         mock_resp = MagicMock()
         mock_resp.status_code = 201
         mock_resp.json.return_value = [
-            {"key": "DEMO-1"}, {"key": "DEMO-2"}
+            {"key": "SP-1"}, {"key": "SP-2"}
         ]
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
 
         job_id, keys = submit_tests_bulk("token", [{}, {}], http_client=mock_client)
         assert job_id is None
-        assert keys == ["DEMO-1", "DEMO-2"]
+        assert keys == ["SP-1", "SP-2"]
 
     def test_response_with_issues(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 201
-        mock_resp.json.return_value = {"issues": [{"key": "DEMO-3"}]}
+        mock_resp.json.return_value = {"issues": [{"key": "SP-3"}]}
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
 
         job_id, keys = submit_tests_bulk("token", [{}], http_client=mock_client)
         assert job_id is None
-        assert keys == ["DEMO-3"]
+        assert keys == ["SP-3"]
 
     def test_job_id_returned_for_async(self):
         mock_resp = MagicMock()
@@ -177,7 +177,7 @@ class TestPollJobStatus:
             MagicMock(status_code=200, json=lambda: {"status": "RUNNING"}),
             MagicMock(status_code=200, json=lambda: {
                 "status": "SUCCESSFUL",
-                "result": {"issues": [{"key": "DEMO-1"}, {"key": "DEMO-2"}]}
+                "result": {"issues": [{"key": "SP-1"}, {"key": "SP-2"}]}
             }),
         ]
 
@@ -186,7 +186,7 @@ class TestPollJobStatus:
             max_polls=3, poll_interval=0,
             http_client=mock_client
         )
-        assert keys == ["DEMO-1", "DEMO-2"]
+        assert keys == ["SP-1", "SP-2"]
 
     def test_failed_job_raises_xray_job_failed_error(self):
         mock_client = MagicMock()
@@ -241,7 +241,7 @@ class TestQueryRelatedTicket:
         issue_type, numeric_id = query_related_ticket(
             "https://jira.example.com",
             {"Authorization": "Basic xxx"},
-            "DEMO-30088",
+            "SP-30088",
             http_client=mock_client
         )
         assert issue_type == "Test Set"
@@ -252,7 +252,7 @@ class TestQueryRelatedTicket:
         mock_client.get.return_value = MagicMock(status_code=404)
         issue_type, numeric_id = query_related_ticket(
             "https://jira.example.com",
-            {}, "DEMO-NOTFOUND",
+            {}, "SP-NOTFOUND",
             http_client=mock_client
         )
         assert issue_type == ""
@@ -270,7 +270,7 @@ class TestGetTestNumericIds:
         ]
         ids = get_test_numeric_ids(
             "https://jira.example.com",
-            {}, ["DEMO-1", "DEMO-2"],
+            {}, ["SP-1", "SP-2"],
             http_client=mock_client
         )
         assert ids == ["111", "222"]
@@ -284,7 +284,7 @@ class TestGetTestNumericIds:
         ]
         ids = get_test_numeric_ids(
             "https://jira.example.com",
-            {}, ["DEMO-1", "DEMO-2", "DEMO-3"],
+            {}, ["SP-1", "SP-2", "SP-3"],
             http_client=mock_client
         )
         assert sorted(ids) == ["111", "333"]
@@ -299,7 +299,7 @@ class TestLinkTestsToTestSet:
         mock_resp.json.return_value = {
             "data": {
                 "addTestsToTestSet": {
-                    "addedTests": ["DEMO-1", "DEMO-2"],
+                    "addedTests": ["SP-1", "SP-2"],
                     "warning": ""
                 }
             }
@@ -308,10 +308,10 @@ class TestLinkTestsToTestSet:
         mock_client.post.return_value = mock_resp
 
         success, failures, warning = link_tests_to_test_set(
-            "xray-token", "12345", ["DEMO-1", "DEMO-2"],
+            "xray-token", "12345", ["SP-1", "SP-2"],
             http_client=mock_client
         )
-        assert success == ["DEMO-1", "DEMO-2"]
+        assert success == ["SP-1", "SP-2"]
         assert failures == []
         assert warning == ""
 
@@ -325,7 +325,7 @@ class TestLinkTestsToTestSet:
         mock_client.post.return_value = mock_resp
 
         success, failures, warning = link_tests_to_test_set(
-            "token", "bad-id", ["DEMO-1"],
+            "token", "bad-id", ["SP-1"],
             http_client=mock_client
         )
         assert success == []
@@ -344,9 +344,9 @@ class TestLinkTestsToStory:
         ]
         success, failures = link_tests_to_story(
             "https://jira.example.com",
-            {}, ["DEMO-1", "DEMO-2"], "DEMO-999",
+            {}, ["SP-1", "SP-2"], "SP-999",
             http_client=mock_client
         )
-        assert success == ["DEMO-1"]
+        assert success == ["SP-1"]
         assert len(failures) == 1
-        assert failures[0]["key"] == "DEMO-2"
+        assert failures[0]["key"] == "SP-2"

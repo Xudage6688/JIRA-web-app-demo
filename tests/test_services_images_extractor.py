@@ -3,7 +3,9 @@
 
 测试核心函数（从 modules/_services_images_logic.py 导入）：
 - calculateRemainingServices: 计算剩余服务列表
-- checkMasterBranch: 检查镜像版本是否为 master 分支
+- checkBranchStatus: 检查镜像版本分支类型
+- checkMasterBranch: 检查镜像版本是否为 master 分支（兼容旧接口）
+- countAttentionServices: 统计需关注的服务数量
 """
 
 import pytest
@@ -15,7 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules._services_images_logic import (
     calculateRemainingServices,
+    checkBranchStatus,
     checkMasterBranch,
+    countAttentionServices,
     countNonMasterServices,
 )
 
@@ -82,7 +86,7 @@ class TestCalculateRemainingServices:
 
 
 class TestCheckMasterBranch:
-    """测试 checkMasterBranch 函数"""
+    """测试 checkMasterBranch 函数（兼容旧接口）"""
 
     def test_master_prefix(self):
         """测试：master 开头的版本识别"""
@@ -102,21 +106,15 @@ class TestCheckMasterBranch:
         assert is_master == True
         assert icon == '✅'
 
+    def test_release_branch(self):
+        """测试：release 分支识别"""
+        is_master, icon = checkMasterBranch('release-1.0.0')
+        assert is_master == False
+        assert icon == '🏷️'
+
     def test_feature_branch(self):
         """测试：feature 分支识别为非 master"""
         is_master, icon = checkMasterBranch('feature-xyz-abc123')
-        assert is_master == False
-        assert icon == '⚠️'
-
-    def test_release_branch(self):
-        """测试：release 分支识别为非 master"""
-        is_master, icon = checkMasterBranch('release-1.0.0')
-        assert is_master == False
-        assert icon == '⚠️'
-
-    def test_dev_branch(self):
-        """测试：dev 分支识别为非 master"""
-        is_master, icon = checkMasterBranch('dev-latest')
         assert is_master == False
         assert icon == '⚠️'
 
@@ -138,17 +136,140 @@ class TestCheckMasterBranch:
         assert is_master == False
         assert icon == '❓'
 
+
+class TestCheckBranchStatus:
+    """测试 checkBranchStatus 函数（新接口）"""
+
+    def test_master_prefix(self):
+        """测试：master 开头的版本"""
+        branch_type, icon, text = checkBranchStatus('master-1.12.99-fff34a049')
+        assert branch_type == 'master'
+        assert icon == '✅'
+        assert text == 'master'
+
+    def test_master_exact(self):
+        """测试：精确 master 版本"""
+        branch_type, icon, text = checkBranchStatus('master')
+        assert branch_type == 'master'
+        assert icon == '✅'
+        assert text == 'master'
+
+    def test_master_in_middle(self):
+        """测试：master 在版本中间"""
+        branch_type, icon, text = checkBranchStatus('app-master-1.0.0')
+        assert branch_type == 'master'
+        assert icon == '✅'
+        assert text == 'master'
+
+    def test_release_prefix(self):
+        """测试：release 开头的版本"""
+        branch_type, icon, text = checkBranchStatus('release-1.0.0')
+        assert branch_type == 'release'
+        assert icon == '🏷️'
+        assert text == 'release'
+
+    def test_release_exact(self):
+        """测试：精确 release 版本"""
+        branch_type, icon, text = checkBranchStatus('release')
+        assert branch_type == 'release'
+        assert icon == '🏷️'
+        assert text == 'release'
+
+    def test_release_in_middle(self):
+        """测试：release 在版本中间"""
+        branch_type, icon, text = checkBranchStatus('app-release-1.0.0')
+        assert branch_type == 'release'
+        assert icon == '🏷️'
+        assert text == 'release'
+
+    def test_feature_branch(self):
+        """测试：feature 分支为 other"""
+        branch_type, icon, text = checkBranchStatus('feature-xyz')
+        assert branch_type == 'other'
+        assert icon == '⚠️'
+        assert text == '非master'
+
+    def test_dev_branch(self):
+        """测试：dev 分支为 other"""
+        branch_type, icon, text = checkBranchStatus('dev-latest')
+        assert branch_type == 'other'
+        assert icon == '⚠️'
+        assert text == '非master'
+
+    def test_empty_version(self):
+        """测试：空版本为 unknown"""
+        branch_type, icon, text = checkBranchStatus('')
+        assert branch_type == 'unknown'
+        assert icon == '❓'
+        assert text == '未知'
+
+    def test_na_version(self):
+        """测试：N/A 版本为 unknown"""
+        branch_type, icon, text = checkBranchStatus('N/A')
+        assert branch_type == 'unknown'
+        assert icon == '❓'
+        assert text == '未知'
+
+    def test_none_version(self):
+        """测试：None 版本为 unknown"""
+        branch_type, icon, text = checkBranchStatus(None)
+        assert branch_type == 'unknown'
+        assert icon == '❓'
+        assert text == '未知'
+
     def test_version_with_uppercase_master(self):
         """测试：MASTER 大写版本识别"""
-        is_master, icon = checkMasterBranch('MASTER-1.0.0')
-        assert is_master == True
+        branch_type, icon, text = checkBranchStatus('MASTER-1.0.0')
+        assert branch_type == 'master'
         assert icon == '✅'
 
-    def test_version_with_mixed_case(self):
-        """测试：混合大小写版本识别"""
-        is_master, icon = checkMasterBranch('Master-branch-1.0')
-        assert is_master == True
-        assert icon == '✅'
+    def test_version_with_uppercase_release(self):
+        """测试：RELEASE 大写版本识别"""
+        branch_type, icon, text = checkBranchStatus('RELEASE-1.0.0')
+        assert branch_type == 'release'
+        assert icon == '🏷️'
+
+
+class TestCountAttentionServices:
+    """测试 countAttentionServices 函数"""
+
+    def test_all_master(self):
+        """测试：全部为 master 分支"""
+        details = [
+            {'service': 'a', 'branch_type': 'master'},
+            {'service': 'b', 'branch_type': 'master'},
+        ]
+        assert countAttentionServices(details) == 0
+
+    def test_all_release(self):
+        """测试：全部为 release 分支"""
+        details = [
+            {'service': 'a', 'branch_type': 'release'},
+            {'service': 'b', 'branch_type': 'release'},
+        ]
+        assert countAttentionServices(details) == 0
+
+    def test_all_other(self):
+        """测试：全部为 other 分支"""
+        details = [
+            {'service': 'a', 'branch_type': 'other'},
+            {'service': 'b', 'branch_type': 'other'},
+        ]
+        assert countAttentionServices(details) == 2
+
+    def test_mixed(self):
+        """测试：混合情况"""
+        details = [
+            {'service': 'a', 'branch_type': 'master'},
+            {'service': 'b', 'branch_type': 'release'},
+            {'service': 'c', 'branch_type': 'other'},
+            {'service': 'd', 'branch_type': 'unknown'},
+        ]
+        assert countAttentionServices(details) == 1
+
+    def test_empty(self):
+        """测试：空列表"""
+        assert countAttentionServices([]) == 0
 
 
 class TestIntegration:

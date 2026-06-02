@@ -70,11 +70,11 @@ class TestJiraExtractorInit:
         assert client.base_url == "https://example.com"
 
     def test_email_stored(self):
-        client = JiraExtractor("https://example.com", "token", "demo@example.com")
-        assert client.email == "demo@example.com"
+        client = JiraExtractor("https://example.com", "token", "user@test.com")
+        assert client.email == "user@test.com"
 
     def test_token_stored(self):
-        client = JiraExtractor("https://example.com", "my-token", "demo@example.com")
+        client = JiraExtractor("https://example.com", "my-token", "user@test.com")
         assert client.api_token == "my-token"
 
     def test_session_created(self):
@@ -110,26 +110,26 @@ class TestJiraExtractorProjectMappings:
         """有映射时添加关联项目"""
         client = JiraExtractor("https://example.com", "token", "email")
         client.project_mappings = {
-            "demo-service-a": ["demo-service-a-cn"],
-            "demo-public-api": ["demo-public-api-job"]
+            "aca": ["aca-cn"],
+            "public-api": ["public-api-job"]
         }
-        result = client._apply_project_mappings(["demo-service-a"])
-        assert "demo-service-a" in result
-        assert "demo-service-a-cn" in result
+        result = client._apply_project_mappings(["aca"])
+        assert "aca" in result
+        assert "aca-cn" in result
 
     def test_apply_project_mappings_no_duplicate(self):
         """已存在的关联项目不重复添加"""
         client = JiraExtractor("https://example.com", "token", "email")
-        client.project_mappings = {"demo-service-a": ["demo-service-a-cn"]}
-        result = client._apply_project_mappings(["demo-service-a", "demo-service-a-cn"])
-        assert result.count("demo-service-a-cn") == 1
+        client.project_mappings = {"aca": ["aca-cn"]}
+        result = client._apply_project_mappings(["aca", "aca-cn"])
+        assert result.count("aca-cn") == 1
 
     def test_apply_project_mappings_case_insensitive(self):
         """映射匹配大小写不敏感"""
         client = JiraExtractor("https://example.com", "token", "email")
-        client.project_mappings = {"demo-service-a": ["demo-service-a-cn"]}
-        result = client._apply_project_mappings(["DEMO-SERVICE-A"])
-        assert "demo-service-a-cn" in result
+        client.project_mappings = {"aca": ["aca-cn"]}
+        result = client._apply_project_mappings(["ACA"])
+        assert "aca-cn" in result
 
     def test_load_project_mappings_missing_file_returns_default(self, tmp_path):
         """映射文件不存在时返回默认映射"""
@@ -142,8 +142,8 @@ class TestJiraExtractorProjectMappings:
             client.project_mappings = None
             with patch.object(client, "_load_project_mappings") as mock_load:
                 mock_load.return_value = {
-                    "demo-service-a": ["demo-service-a-cn"],
-                    "demo-public-api": ["demo-public-api-job"]
+                    "aca": ["aca-cn"],
+                    "public-api": ["public-api-job"]
                 }
                 result = client._load_project_mappings()
                 # 默认映射有值即可
@@ -156,7 +156,7 @@ class TestJiraExtractorGetAffectsProjectFieldId:
     def test_returns_known_field_id(self):
         client = JiraExtractor("https://example.com", "token", "email")
         result = client.get_affects_project_field_id()
-        assert result == "customfield_10001"
+        assert result == "customfield_12605"
 
     def test_returns_custom_field_id(self):
         client = JiraExtractor("https://example.com", "token", "email")
@@ -175,13 +175,13 @@ class TestJiraExtractorSearchIssuesByJql:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "issues": [
-                {"key": "DEMO-1", "fields": {"summary": "Test issue"}}
+                {"key": "TEST-1", "fields": {"summary": "Test issue"}}
             ],
             "total": 1
         }
 
         with patch.object(client.session, 'get', return_value=mock_response):
-            result = client.search_issues_by_jql("project = DEMO")
+            result = client.search_issues_by_jql("project = TEST")
 
         assert result is not None
         assert len(result) >= 1
@@ -198,7 +198,7 @@ class TestJiraExtractorSearchIssuesByJql:
         }
 
         with patch.object(client.session, 'get', return_value=mock_response):
-            result = client.search_issues_by_jql("project = DEMO", custom_field_id="customfield_10001", max_results=50)
+            result = client.search_issues_by_jql("project = TEST", custom_field_id="customfield_123", max_results=50)
 
         assert result is not None
 
@@ -214,7 +214,7 @@ class TestJiraExtractorSearchIssues:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "issues": [
-                {"key": "DEMO-1", "fields": {"summary": "Test"}}
+                {"key": "TEST-1", "fields": {"summary": "Test"}}
             ]
         }
 
@@ -264,7 +264,7 @@ class TestJiraExtractorExtractProjectsFromText:
         """从文本提取项目名"""
         client = JiraExtractor("https://example.com", "token", "email")
 
-        text = "Related projects: demo-service-a-cn, demo-public-api-job"
+        text = "Related projects: aca-cn, public-api-job"
         result = client.extract_projects_from_text(text)
 
         assert isinstance(result, list)
@@ -292,8 +292,8 @@ class TestJiraExtractorSaveResultsToFile:
         client = JiraExtractor("https://example.com", "token", "email")
 
         results = [
-            {"key": "DEMO-1", "project": "demo-service-a-cn"},
-            {"key": "DEMO-2", "project": "demo-public-api"}
+            {"key": "TEST-1", "project": "aca-cn"},
+            {"key": "TEST-2", "project": "public-api"}
         ]
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -344,7 +344,7 @@ class TestJiraExtractorFindAffectsProjectFieldId:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "issues": [
-                {"fields": {"customfield_10001": [{"value": "test-project"}]}}
+                {"fields": {"customfield_12345": [{"value": "test-project"}]}}
             ]
         }
 
@@ -366,12 +366,12 @@ class TestJiraExtractorExtractProjectsFromFilter:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "issues": [
-                {"key": "DEMO-1", "fields": {"customfield_10001": [{"value": "demo-service-a-cn"}]}}
+                {"key": "TEST-1", "fields": {"customfield_12605": [{"value": "aca-cn"}]}}
             ]
         }
 
         with patch.object(client.session, 'get', return_value=mock_response):
-            with patch.object(client, 'search_issues', return_value=[{"key": "DEMO-1", "fields": {"customfield_10001": [{"value": "demo-service-a-cn"}]}}]):
+            with patch.object(client, 'search_issues', return_value=[{"key": "TEST-1", "fields": {"customfield_12605": [{"value": "aca-cn"}]}}]):
                 result = client.extract_projects_from_filter("filter-123")
 
         assert isinstance(result, list)
@@ -384,7 +384,7 @@ class TestJiraExtractorGetAffectsProjects:
         """获取 affects projects"""
         client = JiraExtractor("https://example.com", "token", "email")
 
-        with patch.object(client, 'search_issues', return_value=[{"key": "DEMO-1", "fields": {"customfield_10001": [{"value": "demo-service-a-cn"}]}}]):
-            result = client.get_affects_projects("filter-123", "customfield_10001")
+        with patch.object(client, 'search_issues', return_value=[{"key": "TEST-1", "fields": {"customfield_12605": [{"value": "aca-cn"}]}}]):
+            result = client.get_affects_projects("filter-123", "customfield_12605")
 
         assert isinstance(result, list)
