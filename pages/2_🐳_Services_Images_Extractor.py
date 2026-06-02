@@ -1,6 +1,6 @@
 """
 Services Images Extractor - Streamlit 页面
-从 qcore-apps-descriptors GitHub 仓库读取 kustomization.yml 获取镜像信息
+从 your-org/your-repo GitHub 仓库读取 kustomization.yml 获取镜像信息
 """
 
 import streamlit as st
@@ -88,7 +88,7 @@ def parseServiceMappings(text: str) -> dict[str, str]:
         text: 文本框原始内容
 
     Returns:
-        别名到 qcore-apps-descriptors 中 overlay 目录名的映射
+        别名到 your-org/your-repo 中 overlay 目录名的映射
     """
     result: dict[str, str] = {}
     if not text or not text.strip():
@@ -306,7 +306,7 @@ if 'reverse_query_time' not in st.session_state:
 
 # 主标题
 st.title("🐳 Services Images Extractor")
-st.markdown("从 **qcore-apps-descriptors** GitHub 仓库提取和追踪容器镜像版本")
+st.markdown("从 **your-org/your-repo** GitHub 仓库提取和追踪容器镜像版本")
 
 # 侧边栏配置
 with st.sidebar:
@@ -532,7 +532,7 @@ with st.sidebar:
     custom_services_input = st.text_area(
         "输入服务名称（每行一个）",
         height=100,
-        help="输入不在列表中的服务名称，应与 qcore-apps-descriptors 仓库中的目录名一致",
+        help="输入不在列表中的服务名称，应与 your-org/your-repo 仓库中的目录名一致",
         key="custom_services_text"
     )
 
@@ -775,7 +775,7 @@ if query_button:
                     )
                     results['warnings'].append(
                         f"⚠️ 服务 '{user_label}' 在 {display_name} "
-                        f"环境的 qcore-apps-descriptors 仓库中不存在，请检查服务名称是否正确"
+                        f"环境的 your-org/your-repo 仓库中不存在，请检查服务名称是否正确"
                         f"{suffix}"
                     )
 

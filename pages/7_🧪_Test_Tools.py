@@ -208,7 +208,7 @@ with st.expander("🔗 Prefilled Link 生成", expanded=False):
   with c2:
     link_env = st.selectbox("环境", ["PP", "DEV", "PROD"], key="link_env")
   with c3:
-    link_bu = st.selectbox("BU", ["qima", "qimawqs", "qimacertis"], key="link_bu")
+    link_bu = st.selectbox("BU", ["your-org", "your-org-wqs", "your-org-certis"], key="link_bu")
 
   c1, c2, c3 = st.columns(3)
   with c1:

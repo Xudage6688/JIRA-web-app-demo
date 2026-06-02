@@ -39,8 +39,8 @@ if not user_circleci_config:
 # 使用用户配置
 CIRCLECI_API_TOKEN = user_circleci_config.get('api_token', '')
 VCS_TYPE = user_circleci_config.get('vcs_type', 'github')
-ORGANIZATION = user_circleci_config.get('organization', 'asiainspection')
-DEFAULT_PROJECT = user_circleci_config.get('default_project', 'back-office-cloud')
+ORGANIZATION = user_circleci_config.get('organization', 'your-org')
+DEFAULT_PROJECT = user_circleci_config.get('default_project', 'your-project')
 DEFAULT_BRANCH = user_circleci_config.get('default_branch', 'master')
 
 # 项目根目录
@@ -174,7 +174,7 @@ st.markdown("""
 2. 输入分支名称，或点击 **"🔍 查最新"** 查询该项目最近构建的分支
 3. 从下拉列表选择分支，自动填入输入框
 4. 点击 **"🚀 触发 Pipeline"** 按钮
-5. 系统自动拼接完整路径：`github/asiainspection/项目名`
+5. 系统自动拼接完整路径：`github/your-org/项目名`
 6. 触发成功后可一键跳转 Tab3 监控
 
 #### 📋 Pipeline 列表（Tab2）
@@ -214,8 +214,8 @@ st.markdown("""
 7. 支持单独审批每个 Job，或批量审批全部
 
 #### 💡 简化输入说明
-- ✅ **只需输入项目名**: `back-office-cloud`（不是完整路径）
-- ✅ **自动拼接**: 系统自动组合为 `github/asiainspection/back-office-cloud`
+- ✅ **只需输入项目名**: `your-project`（不是完整路径）
+- ✅ **自动拼接**: 系统自动组合为 `github/your-org/your-project`
 - ✅ **配置预设**: VCS 类型和组织名已在配置中预设
 - ✅ **分支查最新**: 无需记忆分支名，一键查询最近使用过的分支
 

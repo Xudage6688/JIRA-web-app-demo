@@ -133,7 +133,7 @@ class TestPaymentLinkGenerator:
     import modules._test_tools._create_prefilled_link as mod
     originalBu = mod.DEFAULT_FIELDS["bu"]
     try:
-      mod.DEFAULT_FIELDS["bu"] = "qimawqs"
+      mod.DEFAULT_FIELDS["bu"] = "your-org-wqs"
       self._mock_steps(generator, mocker)
       result = generator.generate_link(amount=250)
       assert result.success is True
@@ -144,7 +144,7 @@ class TestPaymentLinkGenerator:
     import modules._test_tools._create_prefilled_link as mod
     originalBu = mod.DEFAULT_FIELDS["bu"]
     try:
-      mod.DEFAULT_FIELDS["bu"] = "qimacertis"
+      mod.DEFAULT_FIELDS["bu"] = "your-org-certis"
       self._mock_steps(generator, mocker)
       result = generator.generate_link(amount=250)
       assert result.success is True
@@ -201,24 +201,24 @@ class TestPaymentLinkGenerator:
     mockResponse.json.return_value = {
       "success": True,
       "data": {
-        "paymentLink": {"link": "https://pay.qima.com/link/test123"},
+        "paymentLink": {"link": "https://pay.example.com/link/test123"},
       },
     }
     mocker.patch.object(generator.session, 'post', return_value=mockResponse)
 
     result = generator.step2_submit_with_sign({"amount": 250}, "sign123")
     assert result.success is True
-    assert result.link_url == "https://pay.qima.com/link/test123"
+    assert result.link_url == "https://pay.example.com/link/test123"
 
   def testStep2ExtractLinkUrlAlternativeField(self, generator, mocker):
     mockResponse = mocker.Mock()
     mockResponse.status_code = 200
     mockResponse.json.return_value = {
       "success": True,
-      "data": {"linkUrl": "https://pay.qima.com/link/alt"},
+      "data": {"linkUrl": "https://pay.example.com/link/alt"},
     }
     mocker.patch.object(generator.session, 'post', return_value=mockResponse)
 
     result = generator.step2_submit_with_sign({"amount": 250}, "sign456")
     assert result.success is True
-    assert result.link_url == "https://pay.qima.com/link/alt"
+    assert result.link_url == "https://pay.example.com/link/alt"

@@ -36,7 +36,7 @@ PROD_BRANCH = "master"
 # 生产部署解锁口令（当前阶段固定为 None，永不解锁）
 PROD_DEPLOY_ENABLED = True
 
-JENKINS_URL_DEFAULT = "https://jenkins.qima.com"
+JENKINS_URL_DEFAULT = "https://jenkins.example.com"
 
 # ── 检查用户 ──────────────────────────────────────────────────────
 if "current_user" not in st.session_state or not st.session_state.current_user:

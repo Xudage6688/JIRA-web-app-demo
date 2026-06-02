@@ -31,7 +31,7 @@ if not user_jira_config:
 
 # 配置直接从 users_config.json 加载（统一配置管理）
 JIRA_CONFIG = {
-    'base_url': user_jira_config.get('base_url', 'https://qima.atlassian.net'),
+    'base_url': user_jira_config.get('base_url', 'https://your-jira.atlassian.net'),
     'api_token': user_jira_config.get('api_token', 'your_api_token_here'),
     'email': get_user_config_loader().get_user_email(current_user),
     'filter_id': user_jira_config.get('filter_id', '20334'),

@@ -53,7 +53,7 @@ if not user_jira_config:
   st.stop()
 
 # 配置信息
-base_url = user_jira_config.get('base_url', 'https://qima.atlassian.net')
+base_url = user_jira_config.get('base_url', 'https://your-jira.atlassian.net')
 config_email = get_user_config_loader().get_user_email(current_user)
 config_token = user_jira_config.get('api_token', '')
 display_name = get_user_config_loader().get_user_display_name(current_user)
