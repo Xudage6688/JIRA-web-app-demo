@@ -123,32 +123,51 @@ def search_pipelines_by_revision(
         show_progress: 是否显示进度信息
 
     Returns:
-        tuple: (results, errors) - 匹配的 pipeline 列表和错误信息字典
+        tuple: (results, errors, debug_samples) - 匹配的 pipeline 列表、错误信息字典和调试样本
     """
     if not revision_prefix or len(revision_prefix.strip()) < 4:
-        return [], {'error': 'Revision prefix too short (minimum 4 characters)'}
+        return [], {'error': 'Revision prefix too short (minimum 4 characters)'}, {}
 
     revision_prefix = revision_prefix.strip().lower()
     raw_matches = []
     errors = {}
+    debug_samples = {}
 
     def search_service(service_name: str):
-        """搜索单个服务"""
+        """搜索单个服务，支持翻页"""
         try:
             project_slug = f"{vcs_type}/{organization}/{service_name}"
-            response, error = call_circleci_api(
-                f"project/{project_slug}/pipeline",
-                api_token=api_token
-            )
+            all_items = []
+            page_token = None
 
-            if error:
-                return [], error
+            while len(all_items) < max_pipelines_per_service:
+                params = {}
+                if page_token:
+                    params['page-token'] = page_token
+                response, error = call_circleci_api(
+                    f"project/{project_slug}/pipeline",
+                    api_token=api_token,
+                    params=params or None
+                )
 
-            if not response or response.status_code != 200:
-                return [], {'error': 'Failed to fetch pipelines'}
+                if error:
+                    return [], error, []
 
-            items = response.json().get('items', [])[:max_pipelines_per_service]
+                if not response or response.status_code != 200:
+                    return [], {'error': 'Failed to fetch pipelines'}, []
+
+                data = response.json()
+                items = data.get('items', [])
+                all_items.extend(items)
+
+                next_page_token = data.get('next_page_token')
+                if not next_page_token or not items:
+                    break
+                page_token = next_page_token
+
+            items = all_items[:max_pipelines_per_service]
             matched = []
+            sample_revisions = [p.get('vcs', {}).get('revision', '')[:12] for p in items[:5]]
 
             for p in items:
                 revision = p.get('vcs', {}).get('revision', '')
@@ -167,9 +186,9 @@ def search_pipelines_by_revision(
                         'service_name': service_name
                     })
 
-            return matched, None
+            return matched, None, sample_revisions
         except Exception as e:
-            return [], {'error': str(e)}
+            return [], {'error': str(e)}, []
 
     # 第一阶段：并发搜索所有服务，获取匹配的 pipeline
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -178,11 +197,13 @@ def search_pipelines_by_revision(
         for future in as_completed(futures):
             svc = futures[future]
             try:
-                matched, error = future.result()
+                matched, error, samples = future.result()
                 if matched:
                     raw_matches.extend(matched)
                 if error:
                     errors[svc] = error
+                if samples:
+                    debug_samples[svc] = samples
             except Exception as e:
                 errors[svc] = {'error': str(e)}
 
@@ -247,7 +268,7 @@ def search_pipelines_by_revision(
     # 再次排序确保顺序正确
     results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
-    return results[:100], errors  # 最多返回100条
+    return results[:100], errors, debug_samples  # 最多返回100条
 
 
 def fetch_recent_branches(

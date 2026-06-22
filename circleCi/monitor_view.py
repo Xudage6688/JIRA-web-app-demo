@@ -92,7 +92,7 @@ def _fetch_and_display_pipeline(pipeline_id: str, api_token: str) -> None:
             _render_git_commit_info(pipeline_data)
 
             workflows = get_pipeline_workflows(pipeline_id, api_token=api_token)
-            _render_workflows_section(workflows, api_token)
+            _render_workflows_section(pipeline_id, workflows, api_token)
 
             st.markdown("---")
             st.subheader("✅ 审批面板")
@@ -120,9 +120,16 @@ def _display_cached_pipeline(pipeline_id: str, api_token: str) -> None:
 
     st.markdown("---")
     if workflows:
-        _render_workflows_expanders(workflows, wf_jobs_map)
+      col_wf1, col_wf2 = st.columns([3, 1])
+      with col_wf1:
+        st.subheader(f"🔄 Workflows ({len(workflows)})")
+      with col_wf2:
+        if st.button("🔄 刷新", key="refresh_workflows_cached", use_container_width=True):
+          _refresh_workflows(pipeline_id, api_token)
+          st.rerun()
+      _render_workflows_expanders(workflows, wf_jobs_map)
     else:
-        st.info("暂无 Workflows 信息")
+      st.info("暂无 Workflows 信息")
 
     st.markdown("---")
     st.subheader("✅ 审批面板")
@@ -209,27 +216,54 @@ def _render_git_commit_info(pipeline_data: dict) -> None:
         st.code(f"Branch: {branch}", language="text")
 
 
-def _render_workflows_section(workflows: list, api_token: str) -> None:
+def _refresh_workflows(pipeline_id: str, api_token: str) -> None:
+  workflows = get_pipeline_workflows(pipeline_id, api_token=api_token)
+  if workflows:
+    wf_ids = [w.get('id') for w in workflows if w.get('id')]
+    wf_jobs_map = _fetch_workflow_jobs_concurrent(wf_ids, api_token=api_token)
+    st.session_state.tab3_workflows = workflows
+    st.session_state.tab3_wf_jobs_map = wf_jobs_map
+  else:
+    st.session_state.tab3_workflows = []
+    st.session_state.tab3_wf_jobs_map = {}
+  pending = []
+  for wf in (workflows or []):
+    for job in st.session_state.tab3_wf_jobs_map.get(wf.get('id'), []):
+      if job.get('type') == 'approval' and job.get('status') == 'on_hold':
+        job['_workflow_id'] = wf.get('id')
+        job['_workflow_name'] = wf.get('name')
+        pending.append(job)
+  st.session_state.tab3_pending_approvals = pending
+
+
+def _render_workflows_section(pipeline_id: str, workflows: list, api_token: str) -> None:
     """渲染 Workflows 区域
 
     Args:
+        pipeline_id: Pipeline ID，用于刷新按钮重新获取
         workflows: Workflow 列表
         api_token: API Token
     """
     if workflows:
+      col_wf1, col_wf2 = st.columns([3, 1])
+      with col_wf1:
         st.subheader(f"🔄 Workflows ({len(workflows)})")
-        wf_ids = [w.get('id') for w in workflows if w.get('id')]
-        wf_jobs_map = _fetch_workflow_jobs_concurrent(wf_ids, api_token=api_token)
+      with col_wf2:
+        if st.button("🔄 刷新", key="refresh_workflows", use_container_width=True):
+          _refresh_workflows(pipeline_id, api_token)
+          st.rerun()
+      wf_ids = [w.get('id') for w in workflows if w.get('id')]
+      wf_jobs_map = _fetch_workflow_jobs_concurrent(wf_ids, api_token=api_token)
 
-        # 缓存到 session_state
-        st.session_state.tab3_workflows = workflows
-        st.session_state.tab3_wf_jobs_map = wf_jobs_map
+      # 缓存到 session_state
+      st.session_state.tab3_workflows = workflows
+      st.session_state.tab3_wf_jobs_map = wf_jobs_map
 
-        _render_workflows_expanders(workflows, wf_jobs_map)
+      _render_workflows_expanders(workflows, wf_jobs_map)
     else:
-        st.info("暂无 Workflows 信息")
-        st.session_state.tab3_workflows = []
-        st.session_state.tab3_wf_jobs_map = {}
+      st.info("暂无 Workflows 信息")
+      st.session_state.tab3_workflows = []
+      st.session_state.tab3_wf_jobs_map = {}
 
 
 def _render_workflows_expanders(workflows: list, wf_jobs_map: dict) -> None:

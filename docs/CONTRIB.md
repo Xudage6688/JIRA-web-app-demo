@@ -47,13 +47,16 @@
 
 ## Available Scripts
 
+> **Note:** Default Streamlit port is `9999` (configured in `.streamlit/config.toml`)
+
 | Command | Description |
 |---------|-------------|
-| `streamlit run app.py` | Start the application locally |
+| `streamlit run app.py` | Start the application locally (http://localhost:9999) |
 | `pytest tests/ -v` | Run all tests with verbose output |
 | `pytest tests/ --cov=. --cov-report=term-missing` | Run tests with coverage report |
 | `pytest tests/test_batch_operations.py -v` | Run batch operations tests |
 | `python -m py_compile pages/*.py` | Check Python syntax |
+| `pip install -r requirements.txt` | Install dependencies |
 
 ---
 
@@ -124,31 +127,35 @@ pytest tests/test_batch_operations.py -v
 ## Project Structure
 
 ```
-devops-toolkit/
-├── app.py                          # Main application entry
-├── requirements.txt                # Python dependencies
-├── README.md                       # Project documentation
-├── CHANGELOG.md                    # Version history
-├── CONTRIBUTING.md                 # Contribution guide
-├── config/                         # Configuration files
-│   ├── users_config.example.json   # User config template
-│   ├── circleci-services.example.txt # Service list template
-│   └── argocd_config.example.json  # ArgoCD config template
-├── pages/                          # Streamlit pages
+qa-toolkit-demo/
+├── app.py                           # Main application entry
+├── requirements.txt                 # Python dependencies
+├── README.md                        # Project documentation
+├── CHANGELOG.md                     # Version history
+├── CONTRIBUTING.md                  # Contribution guide
+├── .streamlit/config.toml            # Streamlit server config (port 9999)
+├── config/                          # Configuration files
+│   ├── users_config.example.json    # User config template
+│   └── argocd_config.example.json    # ArgoCD config template
+├── pages/                           # Streamlit multi-page app
 │   ├── 1_📊_Jira_Affects_Project.py
 │   ├── 2_🐳_Services_Images_Extractor.py
 │   ├── 3_🌐_Open_PR_Url.py
 │   ├── 4_🚀_CircleCI_Pipeline.py
 │   ├── 5_📝_Jira_Operations.py
-│   └── 6_🔧_Jenkins_Deploy.py
-├── modules/                        # Shared modules
-│   ├── user_config_loader.py
-│   ├── jira_extractor.py
-│   ├── jira_operations_helper.py
-│   ├── test_case_importer.py
-│   ├── _test_case_importer_logic.py
-│   ├── github_kustomize_client.py
-│   └── argocd_client.py
+│   ├── 6_🔧_Jenkins_Deploy.py
+│   └── 7_🧪_Test_Tools.py
+├── modules/                         # Shared modules
+│   ├── user_config_loader.py        # Multi-user config + auth builder
+│   ├── jira_extractor.py            # Jira data extractor
+│   ├── jira_operations_helper.py    # Jira operations
+│   ├── test_case_importer.py        # Test cases import UI
+│   ├── _test_case_importer_logic.py # Test cases import logic
+│   ├── github_kustomize_client.py   # GitHub image query
+│   └── _test_tools/                 # Test utilities
+│       └── _myqima_booking/         # myQIMA auto-booking module
+│           ├── _config_builder.py   # Booking config builder
+│           └── _booking_runner.py   # Playwright booking runner
 ├── circleCi/                       # CircleCI modules
 │   ├── triggerJob.py
 │   ├── monitoring.py

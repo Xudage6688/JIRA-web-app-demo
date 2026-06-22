@@ -41,6 +41,12 @@ JIRA_CONFIG = {
 # 每次渲染都用最新配置覆盖，确保修改 users_config.json 后立即生效
 st.session_state.jira_config = JIRA_CONFIG.copy()
 
+# 对比功能状态变量
+if 'previous_projects' not in st.session_state:
+    st.session_state.previous_projects = None
+if 'current_projects' not in st.session_state:
+    st.session_state.current_projects = None
+
 # 项目映射管理函数
 def load_project_mappings():
     try:
@@ -233,6 +239,10 @@ with tab1:
             st.error("❌ 请先输入或检测 Affects Project 字段 ID")
             st.info("💡 提示：点击'自动检测字段ID'按钮，或手动输入字段ID")
         else:
+            # 保存上次结果用于对比
+            if st.session_state.current_projects:
+                st.session_state.previous_projects = st.session_state.current_projects
+            
             try:
                 jira_client = JiraExtractor(base_url, api_token, email)
                 
@@ -264,9 +274,51 @@ with tab1:
                     # 去重并排序
                     unique_projects = sorted(list(set([p.strip() for p in all_projects if p.strip() and p.strip().upper() != "NA"])))
                     
+                    # 对比分析
+                    comparison = None
                     if unique_projects:
+                        # 有有效数据时才更新 current_projects，避免空列表覆盖上次结果
+                        st.session_state.current_projects = unique_projects
+                        
+                        if st.session_state.previous_projects is not None:
+                            prev_set = set(st.session_state.previous_projects)
+                            curr_set = set(unique_projects)
+                            comparison = {
+                                'added': sorted(curr_set - prev_set),
+                                'removed': sorted(prev_set - curr_set),
+                                'unchanged': sorted(curr_set & prev_set)
+                            }
+
                         # 显示项目数量
                         st.info(f"📊 共找到 {len(unique_projects)} 个唯一项目")
+                        
+                        # 显示对比统计
+                        if comparison:
+                            total_changes = len(comparison['added']) + len(comparison['removed'])
+                            if total_changes > 0:
+                                st.success(f"🔍 对比发现 {total_changes} 个变化（新增 {len(comparison['added'])}，移除 {len(comparison['removed'])}）")
+                            else:
+                                st.info("🔍 对比结果：与上次提取一致，无变化")
+                            
+                            # 对比分析详情（紧跟在统计下面）
+                            if comparison['added'] or comparison['removed']:
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("🆕 新增", len(comparison['added']), delta=len(comparison['added']) if comparison['added'] else None)
+                                with col2:
+                                    st.metric("🗑️ 移除", len(comparison['removed']), delta=-len(comparison['removed']) if comparison['removed'] else None, delta_color="inverse")
+                                with col3:
+                                    st.metric("✅ 不变", len(comparison['unchanged']))
+                                
+                                if comparison['added']:
+                                    with st.expander(f"🆕 新增项目 ({len(comparison['added'])} 个)", expanded=True):
+                                        for p in comparison['added']:
+                                            st.success(f"**{p}**")
+                                
+                                if comparison['removed']:
+                                    with st.expander(f"🗑️ 移除项目 ({len(comparison['removed'])} 个)", expanded=True):
+                                        for p in comparison['removed']:
+                                            st.error(f"**{p}** (已移除)")
                         
                         # 显示项目映射信息
                         current_mappings = jira_client.get_project_mappings()
@@ -345,7 +397,7 @@ with tab1:
         - **列表展示**: 一行一个项目，方便复制
         - **一键复制**: 支持复制到剪贴板
         - **配置持久化**: 使用本地文件存储，刷新页面后配置保持不变
-        - **项目映射**: 自动添加关联项目（如aca自动添加aca-cn）
+        - **项目映射**: 自动添加关联项目
         - **🔒 完全安全**: API Token始终隐藏，绝对不显示明文
         
         ### 💾 配置管理：
@@ -468,7 +520,6 @@ with tab2:
     st.subheader("🔄 重置映射")
     if st.button("🔄 重置为默认映射", key="reset_all_mappings"):
         default_mappings = {
-            "aca": ["aca-cn"],
             "public-api": ["public-api-job"],
             "back-office": ["back-office-job"],
             "aims-web": ["aims-web-job"],
@@ -506,8 +557,8 @@ with tab2:
         - **关联项目**: 需要自动添加的项目列表（逗号分隔）
         
         ### 💡 使用示例：
-        - 当检测到 `aca` 时，自动添加 `aca-cn`
         - 当检测到 `public-api` 时，自动添加 `public-api-job`
+        - 当检测到 `back-office` 时，自动添加 `back-office-job`
         
         ### 🔧 管理操作：
         - **添加规则**: 填写源项目和关联项目，点击添加

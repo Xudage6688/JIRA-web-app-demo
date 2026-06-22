@@ -2,9 +2,9 @@
 
 ## Application Overview
 
-**Application**: DevOps Automation Platform
+**Application**: QA DevOps Toolkit
 **Technology**: Streamlit (Python)
-**Port**: 8501 (default Streamlit port)
+**Port**: 9999 (configured in `.streamlit/config.toml`)
 **Configuration**: JSON-based multi-user config
 
 ---
@@ -24,7 +24,7 @@ pip install -r requirements.txt
 # 3. Start application
 streamlit run app.py
 
-# 4. Access at http://localhost:8501
+# 4. Access at http://localhost:9999
 ```
 
 ### Production Deployment (Streamlit Cloud)

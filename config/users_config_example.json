@@ -23,6 +23,17 @@
         "username": "# YOUR_JENKINS_USER",
         "api_token": "# YOUR_JENKINS_TOKEN",
         "jenkins_url": "https://jenkins.example.com"
+      },
+      "myqima": {
+        "playwright_project_path": "",
+        "directAccount": {
+          "username": "",
+          "password": ""
+        },
+        "ppssoBackdoor": {
+          "backofficeUsername": "",
+          "backofficePassword": ""
+        }
       }
     }
   },

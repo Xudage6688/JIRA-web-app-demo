@@ -92,7 +92,7 @@ def _render_search_input(
                 st.rerun()
 
     if search_btn:
-        _handle_search(commit_prefix, selected_services, vcs_type, organization, api_token)
+        _handle_search(commit_prefix, selected_services, vcs_type, organization, api_token, search_all)
 
     # 显示已缓存的搜索结果
     if st.session_state.commit_search_results:
@@ -104,7 +104,8 @@ def _handle_search(
     selected_services: list,
     vcs_type: str,
     organization: str,
-    api_token: str
+    api_token: str,
+    search_all: bool = True
 ) -> None:
     """处理搜索请求
 
@@ -114,6 +115,7 @@ def _handle_search(
         vcs_type: VCS 类型
         organization: 组织名称
         api_token: API Token
+        search_all: 是否搜索所有服务（搜索全部时限制20条，选特定服务时放宽到100）
     """
     st.session_state.commit_search_prefix = commit_prefix
 
@@ -125,14 +127,16 @@ def _handle_search(
         st.warning("⚠️ 请至少选择一个服务")
         return
 
-    with st.spinner(f"🔍 正在搜索 {len(selected_services)} 个服务..."):
-        results, errors = search_pipelines_by_revision(
+    max_pipelines = 20 if search_all else 100
+    hint = "搜索所有服务" if search_all else "指定服务"
+    with st.spinner(f"🔍 正在搜索 {len(selected_services)} 个服务 ({hint}, 每个最多查 {max_pipelines} 条)..."):
+        results, errors, debug_info = search_pipelines_by_revision(
             commit_prefix,
             selected_services,
             vcs_type=vcs_type,
             organization=organization,
             api_token=api_token,
-            max_pipelines_per_service=20
+            max_pipelines_per_service=max_pipelines
         )
 
     # 显示错误信息
@@ -148,6 +152,13 @@ def _handle_search(
     else:
         st.session_state.commit_search_results = None
         st.warning(f"❌ 未找到匹配 '{commit_prefix}' 的 Pipeline")
+        if debug_info:
+            with st.expander("🔬 诊断信息：前3个服务的 Pipeline Revision 样本"):
+                for svc, samples in debug_info.items():
+                    st.caption(f"**{svc}** (最近 {len(samples)} 个 pipeline revision):")
+                    for s in samples:
+                        st.code(s or "(空)", language="text")
+                    st.divider()
         st.info("💡 建议：检查 commit ID 是否正确，或尝试更短的前缀")
 
 

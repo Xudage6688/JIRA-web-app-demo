@@ -367,6 +367,20 @@ def _render_single_approve_button(approval: dict, pending_approvals: list) -> No
 
             if single_success:
                 st.success(f"✅ {approval['service_name']} 审批成功！")
+
+                # 初始化审批结果
+                if not st.session_state.get('batch_approve_results'):
+                    st.session_state.batch_approve_results = {'success': [], 'failed': []}
+
+                # 追加到审批结果（累积，不覆盖）
+                result_item = {
+                    'service': approval['service_name'],
+                    'pipeline_number': approval['pipeline_number'],
+                    'job_name': approval['job_name']
+                }
+                st.session_state.batch_approve_results['success'].append(result_item)
+
+                # 从待审批列表移除
                 st.session_state.batch_pending_approvals = [
                     a for a in pending_approvals
                     if a['job_id'] != approval['job_id']
@@ -410,20 +424,30 @@ def _render_batch_approve_action(pending_approvals: list) -> None:
                 max_workers=5
             )
 
-            st.session_state.batch_approve_results = {
-                'success': approve_success,
-                'failed': approve_failed
-            }
+            # 初始化审批结果
+            if not st.session_state.get('batch_approve_results'):
+                st.session_state.batch_approve_results = {'success': [], 'failed': []}
+
+            # 防止重复：过滤已存在的 job_name
+            already_approved_ids = {s['job_name'] for s in st.session_state.batch_approve_results.get('success', [])}
+            new_success = [s for s in approve_success if s['job_name'] not in already_approved_ids]
+            new_failed = [f for f in approve_failed if f['job_name'] not in already_approved_ids]
+
+            # 累积结果（不覆盖历史）
+            st.session_state.batch_approve_results['success'].extend(new_success)
+            st.session_state.batch_approve_results['failed'].extend(new_failed)
 
             # 更新待审批列表
-            approved_ids = [s['job_name'] for s in approve_success]
+            all_approved_ids = {s['job_name'] for s in st.session_state.batch_approve_results['success']}
             st.session_state.batch_pending_approvals = [
                 a for a in pending_approvals
-                if a['job_name'] not in approved_ids
+                if a['job_name'] not in all_approved_ids
             ]
 
+            total_success = len(st.session_state.batch_approve_results['success'])
+            total_failed = len(st.session_state.batch_approve_results['failed'])
             status.update(
-                label=f"✅ 批量审批完成！成功: {len(approve_success)}，失败: {len(approve_failed)}",
+                label=f"✅ 批量审批完成！本次: 成功 {len(approve_success)}，失败 {len(approve_failed)} | 累计: 成功 {total_success}，失败 {total_failed}",
                 state="complete"
             )
 

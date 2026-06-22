@@ -24,6 +24,7 @@ from modules._test_tools._generate_photo import generate_random_photos, generate
 from modules._test_tools._get_photo_from_url import TESLA_MODEL_MAP, download_tesla_images
 from modules._test_tools._python_auto_gui import MouseMover
 from modules._test_tools._shein_order import SheinOrderFlow
+from modules._myqima_booking._config_builder import LOB_BOOKING_TYPES, EA_VARIANTS, ENVA_VARIANTS
 
 st.set_page_config(page_title="Test Tools", page_icon="🧪", layout="wide")
 
@@ -425,6 +426,155 @@ with st.expander("📋 SHEIN 订单流程测试", expanded=False):
     for log in st.session_state.shein_logs:
       st.text(log)
 
+
+# ── 10. myQIMA 自动下单 ──
+with st.expander("🏪 myQIMA 自动下单", expanded=False):
+  st.markdown("通过 Playwright 自动执行 myQIMA 业务线下单流程。")
+
+  # 读取当前用户配置
+  _myqima_cfg = {}
+  _curr_user = st.session_state.get("current_user")
+  if _curr_user:
+    _cfg_path = os.path.join(os.path.dirname(__file__), "..", "config", "users_config.json")
+    try:
+      with open(_cfg_path, encoding="utf-8") as _fh:
+        _all_cfg = json.load(_fh)
+      _myqima_cfg = _all_cfg.get("users", {}).get(_curr_user, {}).get("myqima", {})
+    except Exception:
+      pass
+
+  _default_direct = _myqima_cfg.get("directAccount", {})
+  _default_ppsso = _myqima_cfg.get("ppssoBackdoor", {})
+  _default_path = _myqima_cfg.get("playwright_project_path", "")
+
+  _direct_user = ""
+  _direct_pwd = ""
+  _ppsso_cid_val = ""
+  _ppsso_user_val = ""
+  _ppsso_pwd_val = ""
+
+  _login_method = st.radio(
+    "登录方式", ["myQIMA 账号", "PPSO CompanyId"],
+    horizontal=True, key="myqima_login_method",
+  )
+
+  if _login_method == "myQIMA 账号":
+    col1, col2 = st.columns(2)
+    with col1:
+      _direct_user = st.text_input(
+        "myQIMA 账号", value=_default_direct.get("username", ""),
+        key="myqima_direct_user",
+      )
+    with col2:
+      _direct_pwd = st.text_input(
+        "myQIMA 密码", type="password",
+        value=_default_direct.get("password", ""),
+        key="myqima_direct_pwd",
+      )
+  else:
+    col1, col2 = st.columns(2)
+    with col1:
+      _ppsso_cid_val = st.text_input(
+        "Company ID", value=_myqima_cfg.get("companyId", ""),
+        key="myqima_ppsso_cid",
+      )
+    with col2:
+      st.text_input(
+        "PPSO URL",
+        value=_default_ppsso.get("url", ""),
+        disabled=True, key="myqima_ppsso_url",
+      )
+    col1, col2 = st.columns(2)
+    with col1:
+      _ppsso_user_val = st.text_input(
+        "Backoffice 账号", value=_default_ppsso.get("backofficeUsername", ""),
+        key="myqima_ppsso_user",
+      )
+    with col2:
+      _ppsso_pwd_val = st.text_input(
+        "Backoffice 密码", type="password",
+        value=_default_ppsso.get("backofficePassword", ""),
+        key="myqima_ppsso_pwd",
+      )
+
+  col1, col2 = st.columns(2)
+  with col1:
+    _lob = st.selectbox(
+      "业务线", list(LOB_BOOKING_TYPES.keys()),
+      key="myqima_lob",
+    )
+  with col2:
+    _bt_list = LOB_BOOKING_TYPES[_lob]
+    _booking_type = st.selectbox("下单类型", _bt_list, key="myqima_bt")
+
+  _ea_variant = None
+  _enva_variant = None
+  if _booking_type == "EA":
+    _ea_variant = st.selectbox(
+      "EA 子标准", EA_VARIANTS, key="myqima_ea",
+    )
+  elif _booking_type == "ENVA":
+    _enva_variant = st.selectbox(
+      "ENVA Audit Guidelines", ENVA_VARIANTS, key="myqima_enva",
+    )
+
+  col1, col2 = st.columns(2)
+  with col1:
+    _product_count = st.number_input(
+      "产品数量", min_value=1, max_value=10, value=1,
+      key="myqima_product_count",
+    )
+  with col2:
+    _dry_run = st.checkbox("Dry Run（仅生成配置，不执行下单）", value=True, key="myqima_dry_run")
+
+  _playwright_path = st.text_input(
+    "Playwright 项目路径",
+    value=_default_path,
+    placeholder=r"D:\pythonProject\playwright",
+    help="指向包含 myqima-booking-flow 测试脚本的 Playwright 项目根目录",
+    key="myqima_playwright_path",
+  )
+
+  if st.button("🚀 开始下单", type="primary", use_container_width=True, key="myqima_start"):
+    from modules._myqima_booking._config_builder import BookingConfig
+    from modules._myqima_booking._booking_runner import BookingRunner
+
+    if not _playwright_path:
+      st.error("❌ 请输入 Playwright 项目路径")
+    else:
+      config = BookingConfig(
+        login_type="myqima" if _login_method == "myQIMA 账号" else "ppsso",
+        booking_type=_booking_type,
+        product_count=_product_count,
+        dry_run=_dry_run,
+        direct_username=_direct_user,
+        direct_password=_direct_pwd,
+        company_id=_ppsso_cid_val,
+        ppsso_username=_ppsso_user_val,
+        ppsso_password=_ppsso_pwd_val,
+        ea_variant=_ea_variant,
+        enva_variant=_enva_variant,
+      )
+
+      runner = BookingRunner(_playwright_path)
+      status = st.status("⏳ 执行下单流程...", expanded=True)
+      with status:
+        for item in runner.stream(config.to_dict()):
+          if isinstance(item, str):
+            status.write(item)
+            st.session_state.myqima_last_log = item
+          else:
+            if item.success:
+              st.success("✅ 下单成功！")
+              if item.order_id:
+                st.info(f"📋 Order ID: `{item.order_id}`")
+              if item.qima_ref:
+                st.info(f"📋 QIMA Ref: `{item.qima_ref}`")
+            else:
+              st.error(f"❌ 下单失败: {item.error}")
+
+  if st.button("🗑️ 清空日志", key="myqima_clear"):
+    st.rerun()
 
 # ── 页脚 ──
 st.markdown("---")
