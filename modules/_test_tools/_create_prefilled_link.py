@@ -13,9 +13,9 @@ import requests
 
 
 API_ENDPOINTS: Dict[str, str] = {
-  "DEV": "https://api-gateway.qcore-dev.example.com/exchange-service/v1.0/pre-payment/links",
-  "PP": "https://api-gateway.qcore-preprod.example.com/exchange-service/v1.0/pre-payment/links",
-  "PROD": "https://api-gateway.example.com/exchange-service/v1.0/pre-payment/links",
+  "DEV": "https://api-gateway.qcore-dev.qima.com/exchange-service/v1.0/pre-payment/links",
+  "PP": "https://api-gateway.qcore-preprod.qima.com/exchange-service/v1.0/pre-payment/links",
+  "PROD": "https://api-gateway.qima.com/exchange-service/v1.0/pre-payment/links",
 }
 
 DEFAULT_HEADERS: Dict[str, str] = {
@@ -27,10 +27,10 @@ DEFAULT_HEADERS: Dict[str, str] = {
 }
 
 DEFAULT_FIELDS: Dict[str, Any] = {
-  "companyName": "Example_Test_Client",
-  "contactEmail": "test@example.com",
-  "contactName": "Test User",
-  "bu": "your-org",
+  "companyName": "QIMA_DAISY_LIU_CLIENT",
+  "contactEmail": "daisy.liu@qima.com",
+  "contactName": "Daisy Test",
+  "bu": "qima",
   "currency": "USD",
   "processingFee": 0,
   "sourceSystem": "NS",
@@ -38,6 +38,10 @@ DEFAULT_FIELDS: Dict[str, Any] = {
   "percentDiscount": 0.05,
   "remark": "Payment discount test",
 }
+
+DEFAULT_INVOICE_URL = (
+  "https://yd125.oss-cn-hongkong.aliyuncs.com/QISHUI_yinyue_uia_X64_131689.zip"
+)
 
 
 @dataclass
@@ -72,6 +76,19 @@ class PaymentLinkResponse:
   error_message: Optional[str] = None
   status_code: Optional[int] = None
   request_data: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class InvoicePushResponse:
+  """推送 invoice 的结果。"""
+  success: bool
+  request_id: Optional[str] = None
+  original_request_id: Optional[str] = None
+  sign: Optional[str] = None
+  invoice_url: Optional[str] = None
+  error_message: Optional[str] = None
+  status_code: Optional[int] = None
+  response_data: Optional[Any] = None
 
 
 class PaymentLinkGenerator:
@@ -275,3 +292,145 @@ class PaymentLinkGenerator:
       return self.step2_submit_with_sign(request_data, sign)
     except Exception as e:
       return PaymentLinkResponse(success=False, error_message=str(e))
+
+  def _new_request_id(self) -> str:
+    """生成本次推送用的随机 requestId。"""
+    return f"NS-2026-{random.randint(100000, 999999)}"
+
+  def _invoice_endpoint(self, request_id: str, original_request_id: str, sign: str) -> str:
+    """组装推送 invoice 的 PUT URL。"""
+    return (
+      f"{self.base_url}/invoice"
+      f"?requestId={request_id}"
+      f"&originalRequestId={original_request_id}"
+      f"&sign={sign}"
+    )
+
+  def _extract_sign(self, result: Dict[str, Any]) -> Optional[str]:
+    """从 API 响应中提取 sign（data.sign 或 message 中的 Expected）。"""
+    sign = None
+    if result.get("success"):
+      data = result.get("data", {})
+      if isinstance(data, dict):
+        sign = data.get("sign")
+      elif isinstance(data, str):
+        sign = data
+    if not sign and "Expected:" in result.get("message", ""):
+      match = re.search(r"Expected:\s*([a-f0-9]{64})", result.get("message", ""))
+      if match:
+        sign = match.group(1)
+    return sign
+
+  def step1_fetch_invoice_sign(
+    self,
+    request_id: str,
+    original_request_id: str,
+    invoice_url: str,
+  ) -> Dict[str, Any]:
+    """第一步：用 dummy sign 调用 invoice PUT，解析真实 sign。"""
+    url = self._invoice_endpoint(request_id, original_request_id, self.DUMMY_SIGN)
+    body = {"invoiceUrl": invoice_url}
+    try:
+      response = self.session.put(url, json=body, timeout=30)
+      if response.status_code == 200:
+        result = response.json()
+        sign = self._extract_sign(result)
+        if sign:
+          return {"success": True, "sign": sign, "response": result}
+        return {
+          "success": False,
+          "error": "响应中未找到sign",
+          "response": result,
+        }
+      return {
+        "success": False,
+        "error": response.text,
+        "status_code": response.status_code,
+      }
+    except Exception as e:
+      return {"success": False, "error": str(e)}
+
+  def step2_push_invoice_with_sign(
+    self,
+    request_id: str,
+    original_request_id: str,
+    invoice_url: str,
+    sign: str,
+  ) -> InvoicePushResponse:
+    """第二步：用真实 sign 推送 invoice。"""
+    url = self._invoice_endpoint(request_id, original_request_id, sign)
+    body = {"invoiceUrl": invoice_url}
+    try:
+      response = self.session.put(url, json=body, timeout=30)
+      if response.status_code == 200:
+        try:
+          result = response.json()
+        except Exception:
+          result = response.text
+        return InvoicePushResponse(
+          success=True,
+          request_id=request_id,
+          original_request_id=original_request_id,
+          sign=sign,
+          invoice_url=invoice_url,
+          status_code=response.status_code,
+          response_data=result,
+        )
+      return InvoicePushResponse(
+        success=False,
+        request_id=request_id,
+        original_request_id=original_request_id,
+        invoice_url=invoice_url,
+        error_message=response.text,
+        status_code=response.status_code,
+      )
+    except Exception as e:
+      return InvoicePushResponse(
+        success=False,
+        request_id=request_id,
+        original_request_id=original_request_id,
+        invoice_url=invoice_url,
+        error_message=str(e),
+      )
+
+  def push_invoice(
+    self,
+    original_request_id: str,
+    invoice_url: Optional[str] = None,
+    request_id: Optional[str] = None,
+  ) -> InvoicePushResponse:
+    """两步流程推送 invoice：先取 sign，再正式 PUT。"""
+    if not original_request_id or not original_request_id.strip():
+      return InvoicePushResponse(
+        success=False, error_message="originalRequestId 不能为空"
+      )
+    invoice_url = invoice_url or DEFAULT_INVOICE_URL
+    request_id = request_id or self._new_request_id()
+    try:
+      step1 = self.step1_fetch_invoice_sign(
+        request_id, original_request_id.strip(), invoice_url
+      )
+      if not step1.get("success"):
+        return InvoicePushResponse(
+          success=False,
+          request_id=request_id,
+          original_request_id=original_request_id.strip(),
+          invoice_url=invoice_url,
+          error_message=step1.get("error"),
+          status_code=step1.get("status_code"),
+          response_data=step1.get("response"),
+        )
+      return self.step2_push_invoice_with_sign(
+        request_id,
+        original_request_id.strip(),
+        invoice_url,
+        step1["sign"],
+      )
+    except Exception as e:
+      return InvoicePushResponse(
+        success=False,
+        request_id=request_id,
+        original_request_id=original_request_id.strip(),
+        invoice_url=invoice_url,
+        error_message=str(e),
+      )

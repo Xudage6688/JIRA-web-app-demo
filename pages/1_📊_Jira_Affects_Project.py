@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.jira_extractor import JiraExtractor
 from modules.user_config_loader import get_jira_config, get_user_config_loader
 from modules.components import copy_button
+from modules._affects_projects_grouping_logic import group_projects_by_sp_team
 
 st.set_page_config(page_title="Jira Affects Project 提取工具", layout="wide")
 
@@ -31,7 +32,7 @@ if not user_jira_config:
 
 # 配置直接从 users_config.json 加载（统一配置管理）
 JIRA_CONFIG = {
-    'base_url': user_jira_config.get('base_url', 'https://your-jira.atlassian.net'),
+    'base_url': user_jira_config.get('base_url', 'https://qima.atlassian.net'),
     'api_token': user_jira_config.get('api_token', 'your_api_token_here'),
     'email': get_user_config_loader().get_user_email(current_user),
     'filter_id': user_jira_config.get('filter_id', '20334'),
@@ -97,10 +98,27 @@ st.info(f"👤 当前使用者: **{user_display_name}** ({st.session_state.curre
 
 st.markdown("输入你的配置并点击按钮，即可一键提取影响的项目列表并下载。")
 
-# 创建标签页
-tab1, tab2 = st.tabs(["🚀 主应用", "⚙️ 项目映射管理"])
+# 单选导航：只渲染当前 Tab，避免 st.tabs 多面板叠显
+JIRA_AFFECTS_TAB_MAIN = "🚀 主应用"
+JIRA_AFFECTS_TAB_MAPPING = "⚙️ 项目映射管理"
+JIRA_AFFECTS_TAB_OPTIONS = [JIRA_AFFECTS_TAB_MAIN, JIRA_AFFECTS_TAB_MAPPING]
 
-with tab1:
+if "jira_affects_active_tab" not in st.session_state:
+    st.session_state.jira_affects_active_tab = JIRA_AFFECTS_TAB_OPTIONS[0]
+if st.session_state.jira_affects_active_tab not in JIRA_AFFECTS_TAB_OPTIONS:
+    st.session_state.jira_affects_active_tab = JIRA_AFFECTS_TAB_OPTIONS[0]
+
+active_tab = st.segmented_control(
+    "功能导航",
+    options=JIRA_AFFECTS_TAB_OPTIONS,
+    key="jira_affects_active_tab",
+    label_visibility="collapsed",
+    required=True,
+    width="stretch"
+)
+st.markdown("---")
+
+if active_tab == JIRA_AFFECTS_TAB_MAIN:
     # 侧边栏配置
     with st.sidebar:
         st.header("⚙️ 配置设置")
@@ -339,10 +357,24 @@ with tab1:
                         # 添加复制按钮 - 使用模块级 copy_button 函数
                         copy_button(projects_text, "affects_proj")
 
-                        # 显示每个项目
-                        st.subheader("🏷️ 项目详情")
-                        for i, project in enumerate(unique_projects, 1):
-                            st.write(f"{i}. **{project}**")
+                        # 按 SP Team 分组显示项目详情
+                        st.subheader("🏷️ 项目详情（按 SP Team 分组）")
+                        grouped = group_projects_by_sp_team(results)
+                        if grouped:
+                            team_count = len(grouped)
+                            grouped_projects_total = sum(len(ps) for ps in grouped.values())
+                            detail_m1, detail_m2 = st.columns(2)
+                            detail_m1.metric("👥 SP Team 数量", team_count)
+                            detail_m2.metric("📊 分组项目总数", grouped_projects_total)
+                            for team_name, team_projects in grouped.items():
+                                team_label = f"👥 {team_name} ({len(team_projects)} 个项目)"
+                                with st.expander(team_label, expanded=False):
+                                    for idx, p in enumerate(team_projects, 1):
+                                        st.write(f"{idx}. **{p}**")
+                                    team_text = "\n".join(team_projects)
+                                    copy_button(team_text, f"affects_proj_team_{team_name}")
+                        else:
+                            st.info("📭 没有可分组的项目")
                     else:
                         st.warning("📭 未找到项目信息")
                     
@@ -431,7 +463,7 @@ with tab1:
         st.info("📌 配置来源: `config/users_config.json`")
         st.caption("💡 配置在当前会话中有效，刷新页面后将从 users_config.json 重新加载")
 
-with tab2:
+elif active_tab == JIRA_AFFECTS_TAB_MAPPING:
     st.header("⚙️ 项目映射管理")
     st.markdown("管理项目映射规则，当检测到特定项目时自动添加关联项目。")
     

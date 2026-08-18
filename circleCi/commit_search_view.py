@@ -68,7 +68,7 @@ def _render_search_input(
         )
 
     with col_input2:
-        st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
+        st.write("")  # 与左侧输入框标签对齐
         search_all = st.checkbox("搜索所有服务", value=True, help="勾选则搜索全部服务，取消则只搜索下方选定的服务")
 
     if not search_all:

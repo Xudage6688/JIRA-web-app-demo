@@ -81,7 +81,6 @@ class JiraExtractor:
             else:
                 logger.warning(f"项目映射文件 {mapping_file} 不存在，使用默认映射")
                 return {
-                    "aca": ["aca-cn"],
                     "public-api": ["public-api-job"]
                 }
         except Exception as e:
@@ -238,64 +237,38 @@ class JiraExtractor:
         logger.error(f"所有搜索 API 版本都失败了: {last_error}")
         raise last_error
 
+    # 发版待发布问题的 JQL（代码内为唯一来源，包含 SP 与 Service Support 两个项目）
+    RELEASE_JQL = (
+        'project IN (SP,"Service Support") '
+        'AND issuetype IN (standardIssueTypes(), subTaskIssueTypes()) '
+        'AND (status = Done '
+        'AND resolution = "Waiting to Release" OR status = "Ready to release") '
+        'AND updated >= -100d '
+        'ORDER BY Key ASC'
+    )
+
     def search_issues(self, filter_id: str = "24058", custom_field_id: str = None, max_results: int = 100) -> List[Dict]:
         """
-        使用过滤器搜索问题
-        
+        搜索 Jira 问题
+
+        优先使用代码内 JQL（覆盖 SP 与 Service Support 项目），
+        若传入自定义 filter_id 则回退到过滤器查询。
+
         Args:
-            filter_id: Jira 过滤器 ID
+            filter_id: Jira 过滤器 ID（非默认值时用于直接查询）
             custom_field_id: 'Affects Project' 字段 ID
             max_results: 最大结果数
-            
+
         Returns:
             问题列表
         """
-        url = f"{self.base_url}/rest/api/3/search"
-        
-        # 构建查询参数
-        fields = ["summary", "key", "status", "customfield_12628"]
-        if custom_field_id:
-            fields.append(custom_field_id)
-        
-        params = {
-            'jql': f'filter={filter_id}',
-            'fields': ','.join(fields),
-            'maxResults': max_results,
-            'startAt': 0
-        }
-        
-        try:
-            response = self.session.get(url, params=params)
-            
-            # 如果过滤器 API 返回 410，尝试使用直接 JQL 查询
-            if response.status_code == 410:
-                logger.warning(f"过滤器 API 返回 410 Gone，尝试直接 JQL 查询...")
-                logger.info(f"过滤器 {filter_id} API 已弃用，使用直接 JQL 查询作为备用...")
-                
-                # 使用精确的 JQL 查询（获取等待发布的已完成问题）
-                fallback_jql = (
-                    'project = SP '
-                    'AND issuetype IN (standardIssueTypes(), subTaskIssueTypes()) '
-                    'AND status = Done '
-                    'AND resolution = "Waiting to Release" '
-                    'AND updated >= -100d '
-                    'ORDER BY Key ASC'
-                )
-                logger.info(f"备用 JQL: {fallback_jql}")
-                return self.search_issues_by_jql(fallback_jql, custom_field_id, max_results)
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            issues = data.get('issues', [])
-            total = data.get('total', 0)
-            
-            logger.info(f"成功获取 {len(issues)} 个问题，总计 {total} 个")
-            return issues
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"搜索问题失败: {e}")
-            raise
+        if filter_id and str(filter_id).strip() and str(filter_id).strip() != "24058":
+            # 用户指定了自定义过滤器，直接使用
+            logger.info(f"使用自定义过滤器搜索: filter_id={filter_id}")
+            return self.search_issues_by_jql(f"filter={filter_id}", custom_field_id, max_results)
+        # 默认使用代码内 JQL（覆盖 SP 与 Service Support 项目）
+        logger.info(f"使用代码内 JQL 查询: {self.RELEASE_JQL}")
+        return self.search_issues_by_jql(self.RELEASE_JQL, custom_field_id, max_results)
 
     def parse_adf_content(self, adf_data: Dict) -> str:
         """
@@ -443,20 +416,12 @@ class JiraExtractor:
     def get_affects_projects(self, filter_id, custom_field_id: Optional[str]) -> List[Dict]:
         """获取影响项目列表（使用新的API）"""
         try:
-            # 首先尝试使用过滤器搜索
+            # 直接使用代码内 JQL 查询（覆盖 SP 与 Service Support 项目）
             issues = self.search_issues(filter_id, custom_field_id, max_results=1000)
         except Exception as e:
-            logger.error(f"使用过滤器搜索失败: {e}")
-            # 如果失败，尝试使用直接JQL查询
-            fallback_jql = (
-                'project = SP '
-                'AND issuetype IN (standardIssueTypes(), subTaskIssueTypes()) '
-                'AND status = Done '
-                'AND resolution = "Waiting to Release" '
-                'AND updated >= -100d '
-                'ORDER BY Key ASC'
-            )
-            issues = self.search_issues_by_jql(fallback_jql, custom_field_id, max_results=1000)
+            logger.error(f"使用代码内 JQL 查询失败: {e}")
+            # 若主路径异常，再走一次直接 JQL 作为兜底
+            issues = self.search_issues_by_jql(self.RELEASE_JQL, custom_field_id, max_results=1000)
         
         return self._extract_affects_projects(issues, custom_field_id)
 

@@ -202,13 +202,13 @@ def search_pipelines_by_revision(
                     raw_matches.extend(matched)
                 if error:
                     errors[svc] = error
-                if samples:
+                if samples and len(debug_samples) < 3:
                     debug_samples[svc] = samples
             except Exception as e:
                 errors[svc] = {'error': str(e)}
 
     if not raw_matches:
-        return [], errors
+        return [], errors, debug_samples
 
     # 按创建时间排序（最新优先）
     raw_matches.sort(key=lambda x: x.get('created_at', ''), reverse=True)
@@ -309,7 +309,9 @@ def _fetch_all_pipelines_with_pagination(
     project_slug: str,
     api_token: str,
     max_pages: int = 3,
-    show_progress: bool = False
+    show_progress: bool = False,
+    branch: Optional[str] = None,
+    stop_after: Optional[int] = None
 ) -> tuple:
     """获取多页 pipeline 数据（解决 CircleCI API 分页限制）
 
@@ -318,6 +320,8 @@ def _fetch_all_pipelines_with_pagination(
         api_token: API Token
         max_pages: 最大获取页数（每页约20条）
         show_progress: 是否显示进度
+        branch: 可选分支过滤（传给 CircleCI API）
+        stop_after: 累计条数达到该值后提前停止（可选）
 
     Returns:
         tuple: (pipelines_list, error_info)
@@ -327,6 +331,8 @@ def _fetch_all_pipelines_with_pagination(
 
     for page_num in range(max_pages):
         params = {}
+        if branch:
+            params['branch'] = branch
         if page_token:
             params['page-token'] = page_token
 
@@ -349,6 +355,9 @@ def _fetch_all_pipelines_with_pagination(
         if show_progress:
             import streamlit as st
             st.caption(f"📦 第 {page_num + 1} 页: {len(items)} 条，累计 {len(all_pipelines)} 条")
+
+        if stop_after and len(all_pipelines) >= stop_after:
+            break
 
         page_token = data.get('next_page_token')
         if not page_token:
@@ -403,7 +412,8 @@ def query_pipelines(
     project_slug: str,
     branch: Optional[str] = None,
     api_token: Optional[str] = None,
-    show_progress: bool = False
+    show_progress: bool = False,
+    limit: int = 10
 ) -> tuple:
     """查询项目的 Pipeline 列表
 
@@ -414,6 +424,7 @@ def query_pipelines(
         branch: 分支名（可选，会自动 trim）
         api_token: API Token
         show_progress: 是否显示进度信息
+        limit: 返回条数上限（默认 10，可选 20/40/100）
 
     Returns:
         tuple: (pipelines, error_info) - pipeline 列表和错误信息
@@ -422,23 +433,37 @@ def query_pipelines(
     if branch:
         branch = branch.strip()
 
+    # CircleCI 每页约 20 条
+    page_size = 20
+    max_pages = max(1, (limit + page_size - 1) // page_size)
+
     params = {}
     if branch:
         params['branch'] = branch
 
-    response, error = call_circleci_api(
-        f"project/{project_slug}/pipeline",
-        params=params,
-        api_token=api_token
-    )
-
-    if error:
-        return None, error
-
     pipelines = []
-    if response and response.status_code == 200:
-        data = response.json()
-        pipelines = data.get('items', [])
+
+    if max_pages <= 1:
+        response, error = call_circleci_api(
+            f"project/{project_slug}/pipeline",
+            params=params,
+            api_token=api_token
+        )
+        if error:
+            return None, error
+        if response and response.status_code == 200:
+            pipelines = response.json().get('items', [])
+    else:
+        pipelines, error = _fetch_all_pipelines_with_pagination(
+            project_slug,
+            api_token,
+            max_pages=max_pages,
+            show_progress=show_progress,
+            branch=branch,
+            stop_after=limit
+        )
+        if error and not pipelines:
+            return None, error
 
     # 如果指定了分支但 API 返回空，回退到查询全部后本地过滤
     if branch and len(pipelines) == 0:
@@ -446,9 +471,13 @@ def query_pipelines(
             import streamlit as st
             st.info(f"💡 指定分支 '{branch}' API 查询返回空，尝试本地过滤...")
 
-        # 获取多页数据（最多3页约60条）
+        # 本地过滤匹配率可能较低，多翻页尝试凑够 limit（上限 10 页）
+        fallback_pages = min(max(max_pages * 2, 5), 10)
         all_pipelines, fallback_error = _fetch_all_pipelines_with_pagination(
-            project_slug, api_token, max_pages=3, show_progress=show_progress
+            project_slug,
+            api_token,
+            max_pages=fallback_pages,
+            show_progress=show_progress
         )
 
         if fallback_error:
@@ -464,8 +493,18 @@ def query_pipelines(
         if len(pipelines) == 0 and show_progress:
             import streamlit as st
             st.warning(f"❌ 本地过滤也未找到分支 '{branch}'")
+        elif show_progress and 0 < len(pipelines) < limit:
+            import streamlit as st
+            st.warning(
+                f"⚠️ 分支 '{branch}' 仅匹配到 {len(pipelines)} 条"
+                f"（目标 {limit}），已扫描约 {len(all_pipelines)} 条原始记录"
+            )
 
-    pipelines = pipelines[:10]  # 只取前10个
+    pipelines = pipelines[:limit]
+
+    if show_progress and not branch and 0 < len(pipelines) < limit:
+        import streamlit as st
+        st.info(f"ℹ️ 当前仅返回 {len(pipelines)} 条（目标 {limit}），可能已无更多历史记录")
 
     if len(pipelines) == 0:
         return [], None

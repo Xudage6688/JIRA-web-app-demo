@@ -16,6 +16,51 @@ from circleCi.pipeline_display import (
     small_metric
 )
 from circleCi.monitoring import format_status
+from circleCi.auto_approve import (
+    find_pending_preprod_approvals,
+    auto_approve_jobs,
+    get_preprod_auto_mode_status,
+    PREPROD_AUTO_POLLING,
+    PREPROD_AUTO_DEPLOY_SUCCESS,
+    PREPROD_AUTO_DEPLOY_FAILED,
+    PREPROD_AUTO_IDLE,
+)
+
+AUTO_REFRESH_INTERVAL_SECONDS = 10
+AUTO_APPROVE_MAX_ITERATIONS = 30
+
+
+def _on_auto_approve_toggle_change() -> None:
+    """开启自动模式时标记需要立即刷新，避免用旧缓存误判部署状态"""
+    if st.session_state.get('tab3_auto_approve_preprod'):
+        st.session_state.tab3_auto_initial_refresh_pending = True
+
+
+def _track_auto_approve_toggle_edge() -> None:
+    """检测自动模式从关→开，备用 on_change（部分 Streamlit 版本回调不稳定）"""
+    curr = bool(st.session_state.get('tab3_auto_approve_preprod'))
+    prev = bool(st.session_state.get('tab3_auto_approve_preprod_prev'))
+    if curr and not prev:
+        st.session_state.tab3_auto_initial_refresh_pending = True
+    st.session_state.tab3_auto_approve_preprod_prev = curr
+
+
+def _maybe_refresh_workflows_for_auto_mode(pipeline_id: str, api_token: str) -> None:
+    """在渲染 Workflows 之前拉取最新数据，确保自动模式可见刷新
+
+    Args:
+        pipeline_id: Pipeline ID
+        api_token: API Token
+    """
+    if not st.session_state.get('tab3_auto_approve_preprod'):
+        return
+    if st.session_state.get('tab3_cached_pipeline_id') != pipeline_id:
+        return
+    should_refresh = st.session_state.get('tab3_auto_initial_refresh_pending')
+    if not should_refresh:
+        return
+    _refresh_workflows(pipeline_id, api_token)
+    st.session_state.tab3_auto_initial_refresh_pending = False
 
 
 def render_monitor_tab(api_token: str) -> None:
@@ -52,9 +97,15 @@ def _render_pipeline_input(api_token: str) -> None:
     if _auto_trigger:
         st.session_state.pending_tab3_monitor = None
 
+    _track_auto_approve_toggle_edge()
+
     # Pipeline ID 变化时清除缓存
     if st.session_state.get('tab3_cached_pipeline_id') and st.session_state.tab3_cached_pipeline_id != pipeline_id_input:
-        for key in ['tab3_cached_pipeline_id', 'tab3_pipeline_data', 'tab3_workflows', 'tab3_wf_jobs_map', 'tab3_pending_approvals']:
+        for key in [
+            'tab3_cached_pipeline_id', 'tab3_pipeline_data', 'tab3_workflows',
+            'tab3_wf_jobs_map', 'tab3_pending_approvals',
+            'tab3_auto_initial_refresh_pending',
+        ]:
             st.session_state.pop(key, None)
 
     # 判断是否需要重新获取数据
@@ -64,9 +115,12 @@ def _render_pipeline_input(api_token: str) -> None:
     if _needs_refetch:
         _fetch_and_display_pipeline(pipeline_id_input, api_token)
     elif _cached and pipeline_id_input:
+        _maybe_refresh_workflows_for_auto_mode(pipeline_id_input, api_token)
         _display_cached_pipeline(pipeline_id_input, api_token=api_token)
     elif pipeline_id_input:
         st.info("💡 点击「🔍 查看状态」或切换 Tab 获取最新数据")
+
+    _run_auto_approve_loop(pipeline_id_input, api_token)
 
 
 def _fetch_and_display_pipeline(pipeline_id: str, api_token: str) -> None:
@@ -120,13 +174,7 @@ def _display_cached_pipeline(pipeline_id: str, api_token: str) -> None:
 
     st.markdown("---")
     if workflows:
-      col_wf1, col_wf2 = st.columns([3, 1])
-      with col_wf1:
-        st.subheader(f"🔄 Workflows ({len(workflows)})")
-      with col_wf2:
-        if st.button("🔄 刷新", key="refresh_workflows_cached", use_container_width=True):
-          _refresh_workflows(pipeline_id, api_token)
-          st.rerun()
+      _render_workflows_header(pipeline_id, api_token, workflows)
       _render_workflows_expanders(workflows, wf_jobs_map)
     else:
       st.info("暂无 Workflows 信息")
@@ -235,6 +283,31 @@ def _refresh_workflows(pipeline_id: str, api_token: str) -> None:
         pending.append(job)
   st.session_state.tab3_pending_approvals = pending
 
+def _render_workflows_header(pipeline_id: str, api_token: str, workflows: list) -> None:
+    """渲染 Workflows 标题行：标题 + 刷新按钮 + 自动审批 Preprod 开关
+
+    Args:
+        pipeline_id: Pipeline ID
+        api_token: API Token
+        workflows: Workflow 列表（用于标题计数）
+    """
+    col_wf1, col_wf2, col_wf3 = st.columns([2, 1, 2])
+    with col_wf1:
+        st.subheader(f"🔄 Workflows ({len(workflows)})")
+    with col_wf2:
+        if st.button("🔄 刷新", key="refresh_workflows", use_container_width=True):
+            _refresh_workflows(pipeline_id, api_token)
+            st.rerun()
+    with col_wf3:
+        st.toggle(
+            "🤖 自动刷新并审批 Preprod",
+            key="tab3_auto_approve_preprod",
+            on_change=_on_auto_approve_toggle_change,
+            help=f"开启后每 {AUTO_REFRESH_INTERVAL_SECONDS} 秒自动刷新；"
+                 "出现名称含 preprod 的待审批 Job 时自动通过，"
+                 "deploy-docker-image-on-preprod 部署成功后自动停止",
+        )
+
 
 def _render_workflows_section(pipeline_id: str, workflows: list, api_token: str) -> None:
     """渲染 Workflows 区域
@@ -245,13 +318,7 @@ def _render_workflows_section(pipeline_id: str, workflows: list, api_token: str)
         api_token: API Token
     """
     if workflows:
-      col_wf1, col_wf2 = st.columns([3, 1])
-      with col_wf1:
-        st.subheader(f"🔄 Workflows ({len(workflows)})")
-      with col_wf2:
-        if st.button("🔄 刷新", key="refresh_workflows", use_container_width=True):
-          _refresh_workflows(pipeline_id, api_token)
-          st.rerun()
+      _render_workflows_header(pipeline_id, api_token, workflows)
       wf_ids = [w.get('id') for w in workflows if w.get('id')]
       wf_jobs_map = _fetch_workflow_jobs_concurrent(wf_ids, api_token=api_token)
 
@@ -433,8 +500,9 @@ def _render_approval_item(job: dict, api_token: str = '') -> None:
     wf_name = job.get('_workflow_name', '')
     job_name = job.get('name', '').lower()
     dur = format_duration(job.get('started_at'), job.get('stopped_at'))
-    is_preprod = 'preprod' in job_name
-    should_expand = is_preprod or len(st.session_state.tab3_pending_approvals) == 1
+    target_env = st.session_state.get('batch_target_env', 'preprod')
+    is_target_env = target_env in job_name
+    should_expand = is_target_env or len(st.session_state.tab3_pending_approvals) == 1
 
     with st.expander(f"✋ {job.get('name')} — {wf_name} — ⏱️ {dur}", expanded=should_expand):
         ac1, ac2 = st.columns([3, 1])
@@ -467,3 +535,108 @@ def _render_approve_button(job: dict, api_token: str = '') -> None:
                 st.rerun()
             else:
                 st.error(f"❌ 审批失败: {res.get('error')}")
+
+def _render_auto_mode_standby(status: str) -> None:
+    """根据 preprod 自动模式状态展示待机说明
+
+    Args:
+        status: get_preprod_auto_mode_status 返回值
+    """
+    if status == PREPROD_AUTO_DEPLOY_SUCCESS:
+        st.caption("🤖 自动模式待机中：Preprod 部署已完成")
+    elif status == PREPROD_AUTO_DEPLOY_FAILED:
+        st.caption("🤖 自动模式已停止：Preprod 部署失败")
+    elif status == PREPROD_AUTO_IDLE:
+        st.caption("🤖 自动模式待机中：无 Preprod 相关任务")
+
+
+def _toast_auto_mode_stopped(status: str) -> None:
+    """轮询刚停止时的一次性 toast
+
+    Args:
+        status: get_preprod_auto_mode_status 返回值
+    """
+    if status == PREPROD_AUTO_DEPLOY_SUCCESS:
+        st.toast("🤖 Preprod 部署已完成，自动模式待机", icon="✅")
+    elif status == PREPROD_AUTO_DEPLOY_FAILED:
+        st.toast("🤖 Preprod 部署失败，自动模式已停止", icon="❌")
+
+
+def _run_auto_approve_loop(pipeline_id: str, api_token: str) -> None:
+    """自动刷新并自动审批 Preprod 的轮询循环
+
+    开关（st.session_state.tab3_auto_approve_preprod）开启、当前有缓存
+    Pipeline 且仍有 preprod 相关未完成工作时：等待固定间隔 → 刷新数据 →
+    自动审批名称含 preprod 的待审批 Job → rerun 进入下一轮。
+    deploy-docker-image-on-preprod 部署成功后停止轮询（即使 Workflow 仍在
+    等待 staging/prod 审批）。
+
+    注意：不能直接给 toggle 的 session_state key 赋值（widget 实例化后
+    Streamlit 会抛 StreamlitAPIException），所以停止轮询只靠提前 return。
+    同时限制最大轮询次数 AUTO_APPROVE_MAX_ITERATIONS，防止异常场景下无限循环。
+
+    Args:
+        pipeline_id: 当前输入框中的 Pipeline ID
+        api_token: API Token
+    """
+    if not st.session_state.get('tab3_auto_approve_preprod'):
+        return
+    if not pipeline_id or st.session_state.get('tab3_cached_pipeline_id') != pipeline_id:
+        return
+
+    # 读取轮询计数，首次进入时初始化为 0
+    current_iteration = st.session_state.get('tab3_auto_approve_iteration', 0)
+    if current_iteration == 0:
+        st.session_state.tab3_auto_approve_iteration = 1
+    else:
+        st.session_state.tab3_auto_approve_iteration += 1
+
+    if st.session_state.tab3_auto_approve_iteration > AUTO_APPROVE_MAX_ITERATIONS:
+        st.toast(f"⚠️ 自动审批轮询已达上限（{AUTO_APPROVE_MAX_ITERATIONS} 次），已停止", icon="⚠️")
+        st.session_state.tab3_auto_approve_iteration = 0
+        return
+
+    workflows = st.session_state.get('tab3_workflows') or []
+    wf_jobs_map = st.session_state.get('tab3_wf_jobs_map') or {}
+    if not workflows:
+        _refresh_workflows(pipeline_id, api_token)
+        if not st.session_state.get('tab3_workflows'):
+            return
+        st.rerun()
+
+    auto_status = get_preprod_auto_mode_status(workflows, wf_jobs_map)
+    if auto_status != PREPROD_AUTO_POLLING:
+        _render_auto_mode_standby(auto_status)
+        st.session_state.tab3_auto_approve_iteration = 0
+        return
+
+    with st.spinner(
+        f"🤖 自动模式（第 {st.session_state.tab3_auto_approve_iteration}/{AUTO_APPROVE_MAX_ITERATIONS} 轮）："
+        f"{AUTO_REFRESH_INTERVAL_SECONDS} 秒后刷新并检查 preprod 审批..."
+    ):
+        time.sleep(AUTO_REFRESH_INTERVAL_SECONDS)
+
+    _refresh_workflows(pipeline_id, api_token)
+
+    pending_preprod = find_pending_preprod_approvals(
+        st.session_state.tab3_workflows,
+        st.session_state.tab3_wf_jobs_map,
+    )
+    if pending_preprod:
+        approved, failed = auto_approve_jobs(pending_preprod, api_token)
+        if approved:
+            names = '、'.join(j.get('name', '') for j in approved)
+            st.toast(f"🤖 已自动审批 {len(approved)} 个 Preprod Job：{names}", icon="✅")
+        for j in failed:
+            st.toast(f"❌ 自动审批失败: {j.get('name')} — {j.get('_approve_error')}", icon="❌")
+
+    auto_status = get_preprod_auto_mode_status(
+        st.session_state.tab3_workflows,
+        st.session_state.tab3_wf_jobs_map,
+    )
+    if auto_status != PREPROD_AUTO_POLLING:
+        st.session_state.tab3_auto_approve_iteration = 0
+        _toast_auto_mode_stopped(auto_status)
+
+    st.rerun()
+

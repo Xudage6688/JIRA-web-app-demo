@@ -267,9 +267,28 @@ with col4:
 st.markdown("---")
 st.markdown("## 🚀 快速开始")
 
-tab1, tab2, tab3 = st.tabs(["📖 新手指南", "🔐 安全说明", "❓ 常见问题"])
+# 单选导航：只渲染当前指南区，避免 st.tabs 多面板叠显
+HOME_GUIDE_TAB1 = "📖 新手指南"
+HOME_GUIDE_TAB2 = "🔐 安全说明"
+HOME_GUIDE_TAB3 = "❓ 常见问题"
+HOME_GUIDE_OPTIONS = [HOME_GUIDE_TAB1, HOME_GUIDE_TAB2, HOME_GUIDE_TAB3]
 
-with tab1:
+if "home_guide_tab" not in st.session_state:
+    st.session_state.home_guide_tab = HOME_GUIDE_OPTIONS[0]
+if st.session_state.home_guide_tab not in HOME_GUIDE_OPTIONS:
+    st.session_state.home_guide_tab = HOME_GUIDE_OPTIONS[0]
+
+active_guide = st.segmented_control(
+    "快速开始",
+    options=HOME_GUIDE_OPTIONS,
+    key="home_guide_tab",
+    label_visibility="collapsed",
+    required=True,
+    width="stretch"
+)
+st.markdown("---")
+
+if active_guide == HOME_GUIDE_TAB1:
     st.markdown("""
     ### 🎯 快速开始指南
     
@@ -316,7 +335,7 @@ with tab1:
     - **结果对比**：导出历史数据进行对比分析
     """)
 
-with tab2:
+elif active_guide == HOME_GUIDE_TAB2:
     st.markdown("""
     ### 🔐 安全说明
     
@@ -365,7 +384,7 @@ with tab2:
     5. **安全环境**：在安全的网络环境中使用
     """)
 
-with tab3:
+elif active_guide == HOME_GUIDE_TAB3:
     st.markdown("""
     ### ❓ 常见问题解答
     
@@ -431,7 +450,7 @@ with tab3:
     **Q: 如何报告问题？**
     
     A: 请通过以下方式反馈：
-    - 📧 Email: demo@example.com
+    - 📧 Email: daisy.liu@qima.com
     - 💬 内部协作平台
     - 📝 详细描述问题和截图
     
@@ -462,7 +481,7 @@ with st.expander("📋 版本更新日志"):
 
     #### 🎉 重大更新
     - ✅ **GitHub 集成**：改用 GitHub 仓库直接读取镜像配置
-    - ✅ **数据源切换**：从 ArgoCD API 切换到 your-org/your-repo 仓库
+    - ✅ **数据源切换**：从 ArgoCD API 切换到 qcore-apps-descriptors 仓库
     - ✅ **工具重命名**：ArgoCD 镜像查询工具 → Services Images Extractor
     - ✅ **Token 可选**：GitHub Token 可选，无 Token 也能使用（公共仓库模式）
     - ✅ **多用户配置**：GitHub Token 统一到 users_config.json 管理
@@ -546,11 +565,11 @@ st.markdown("""
 <div style="text-align: center; color: #666; padding: 2rem 0;">
     <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">🛠️ DevOps 工具集 v3.0.0</p>
     <p style="margin-bottom: 0.5rem;">Powered by <strong>Streamlit</strong> | Built with ❤️ by DevOps Team</p>
-    <p style="font-size: 0.9rem;">👩‍💻 维护者: Open Source Team | 📧 demo@example.com</p>
+    <p style="font-size: 0.9rem;">👩‍💻 维护者: Daisy Liu | 📧 daisy.liu@qima.com</p>
     <p style="font-size: 0.8rem; margin-top: 1rem; color: #999;">
-        © 2026 DevOps Team. All rights reserved. |
-        <a href="https://github.com/your-org/your-repo" target="_blank" style="color: #667eea;">GitHub</a> |
-        <a href="mailto:demo@example.com" style="color: #667eea;">Support</a>
+        © 2026 QIMA. All rights reserved. | 
+        <a href="https://github.com/Daisy-liu822/jiraWeb" target="_blank" style="color: #667eea;">GitHub</a> | 
+        <a href="mailto:daisy.liu@qima.com" style="color: #667eea;">Support</a>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -568,10 +587,10 @@ with st.sidebar:
     st.markdown("### 📌 快速链接")
     
     st.markdown("""
-    - [📖 使用文档](https://github.com/your-org/your-repo)
-    - [🐛 问题反馈](mailto:demo@example.com)
-    - [💡 功能建议](mailto:demo@example.com)
-    - [🔐 安全政策](https://github.com/your-org/your-repo)
+    - [📖 使用文档](https://github.com/Daisy-liu822/jiraWeb)
+    - [🐛 问题反馈](mailto:daisy.liu@qima.com)
+    - [💡 功能建议](mailto:daisy.liu@qima.com)
+    - [🔐 安全政策](https://github.com/Daisy-liu822/jiraWeb)
     """)
     
     st.markdown("---")
